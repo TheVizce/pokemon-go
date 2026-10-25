@@ -1,0 +1,686 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GO Organizer</title>
+<style>
+:root{
+  --bg:#f4f6fb; --card:#fff; --ink:#1c2233; --muted:#6b7389; --line:#e2e6ef;
+  --acc:#2f6fed; --acc2:#e8f0ff; --good:#1e9e5a; --warn:#d98a00; --bad:#d64545;
+  --gold:#e0a800; --shadow:0 1px 3px rgba(20,30,60,.08);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11141c; --card:#1a1f2b; --ink:#e7eaf2; --muted:#98a0b5; --line:#2b3242;
+    --acc:#6b9bff; --acc2:#22304d; --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11141c; --card:#1a1f2b; --ink:#e7eaf2; --muted:#98a0b5; --line:#2b3242;
+  --acc:#6b9bff; --acc2:#22304d; --shadow:none;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{position:sticky;top:0;z-index:10;background:var(--card);border-bottom:1px solid var(--line)}
+.top{display:flex;align-items:center;gap:12px;max-width:1200px;margin:0 auto;padding:10px 16px}
+.top h1{font-size:18px;margin:0;flex:1}
+nav{display:flex;gap:4px;max-width:1200px;margin:0 auto;padding:0 16px;overflow-x:auto}
+nav button{border:0;background:none;color:var(--muted);padding:10px 14px;font:inherit;font-weight:600;border-bottom:3px solid transparent;cursor:pointer;white-space:nowrap}
+nav button.on{color:var(--acc);border-color:var(--acc)}
+main{max-width:1200px;margin:0 auto;padding:16px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:14px}
+input,select,textarea{font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:8px;padding:7px 9px;min-width:0}
+textarea{width:100%;min-height:60px}
+button.b{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+button.b:hover{border-color:var(--acc)}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+button.s{padding:4px 8px;font-size:13px}
+button.d{color:var(--bad)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:var(--shadow)}
+.mon{cursor:pointer;position:relative}
+.mon img{width:96px;height:96px;object-fit:contain;display:block;margin:0 auto}
+.mon .nm{font-weight:700;text-align:center}
+.mon .sub{color:var(--muted);font-size:13px;text-align:center;min-height:18px}
+.badges{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:6px}
+.bd{font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px;background:var(--acc2);color:var(--acc)}
+.bd.sh{background:#fff3c4;color:#8a6500}.bd.cr{background:#ece3ff;color:#5b2fb5}.bd.lu{background:#fff0c2;color:#9a6c00}
+.bd.er{background:#e2f6ff;color:#0b6c91}.bd.dy{background:#ffe2ea;color:#b0244b}
+.ivrow{display:flex;justify-content:space-between;font-size:13px;margin-top:6px;color:var(--muted)}
+.ivp{font-weight:800;color:var(--ink)}
+.stars{color:var(--gold);letter-spacing:1px}
+.fav{position:absolute;top:8px;right:10px;color:var(--gold)}
+.muted{color:var(--muted)}
+.prog{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin:6px 0}
+.prog>i{display:block;height:100%;background:var(--acc)}
+.fr h3{margin:0;font-size:16px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.sp{flex:1}
+.hearts{font-size:15px;letter-spacing:2px}
+.st{font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px}
+.st.ok{background:#dcf5e7;color:#16774a}.st.lo{background:#fff1d6;color:#8a5a00}.st.no{background:#ffe0e0;color:#a52a2a}.st.uk{background:var(--line);color:var(--muted)}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--muted);font-weight:600}
+dialog{border:0;border-radius:14px;padding:0;background:var(--card);color:var(--ink);width:min(680px,96vw);max-height:92vh}
+dialog::backdrop{background:rgba(10,15,30,.5)}
+.dh{display:flex;align-items:center;padding:14px 16px;border-bottom:1px solid var(--line)}
+.dh h2{margin:0;font-size:17px;flex:1}
+.db{padding:16px;overflow:auto;max-height:calc(92vh - 120px)}
+.df{display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--line)}
+.fg{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.fg label,.fl{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--muted);font-weight:600}
+.fg label input,.fg label select{color:var(--ink);font-weight:400;font-size:15px}
+.chk{flex-direction:row!important;align-items:center;gap:6px!important;font-size:14px!important;color:var(--ink)!important}
+.sec{margin:16px 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:700}
+.viv{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:10px}
+.viv .card{padding:10px}
+.viv .own{border-color:var(--good)}
+.dot{display:inline-block;width:12px;height:12px;border-radius:50%;vertical-align:-1px;margin-right:6px;border:1px solid rgba(0,0,0,.15)}
+.stat{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.stat .card{padding:10px 14px;min-width:120px}
+.stat b{font-size:20px;display:block}
+.empty{text-align:center;color:var(--muted);padding:40px 10px}
+.note{font-size:13px;color:var(--muted)}
+@media (max-width:520px){.grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.mon img{width:72px;height:72px}}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>🌍 GO Organizer</h1>
+    <span id="dbstate" class="note"></span>
+    <button class="b s" id="themeBtn" title="Hell/Dunkel">◐</button>
+  </div>
+  <nav id="tabs">
+    <button data-t="mons" class="on">Pokémon</button>
+    <button data-t="friends">Freunde</button>
+    <button data-t="cards">Postkarten</button>
+    <button data-t="viv">Vivillon</button>
+    <button data-t="data">Daten</button>
+  </nav>
+</header>
+<main id="main"></main>
+
+<dialog id="dlg"><form method="dialog" id="dlgForm"><div class="dh"><h2 id="dlgT"></h2><button class="b s" value="cancel" formnovalidate>✕</button></div><div class="db" id="dlgB"></div><div class="df" id="dlgF"></div></form></dialog>
+
+<datalist id="dlSpecies"></datalist>
+<datalist id="dlCostume"></datalist>
+<datalist id="dlMoves"></datalist>
+<datalist id="dlRegion"></datalist>
+
+<script>
+/* ===================== Daten & Speicher ===================== */
+const KEY = 'go-organizer-v1';
+const blank = () => ({ pokemon: [], friends: [], postcards: [], regionHints: {}, version: 1 });
+let S = load();
+function load(){ try{ return Object.assign(blank(), JSON.parse(localStorage.getItem(KEY)) || {}); }catch(e){ return blank(); } }
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){ alert('Speichern fehlgeschlagen: ' + e.message); } }
+const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const today = () => { const d = new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const daysBetween = (a, b) => Math.round((new Date(b) - new Date(a)) / 864e5);
+const fmtDate = d => d ? new Date(d + 'T12:00').toLocaleDateString('de-DE') : '–';
+const num = v => (v === '' || v == null || isNaN(+v)) ? null : +v;
+const nf = n => n == null ? '–' : n.toLocaleString('de-DE');
+
+/* ===================== Pokédex (Namen via PokéAPI-CSV) ===================== */
+let DEX = {};          // id -> {de, en}
+let NAME2ID = {};      // lower name -> id
+const DEXKEY = 'go-organizer-dex';
+async function loadDex(){
+  const st = document.getElementById('dbstate');
+  try{ const c = JSON.parse(localStorage.getItem(DEXKEY)); if (c && Object.keys(c).length > 900){ setDex(c); return; } }catch(e){}
+  st.textContent = 'Lade Pokédex…';
+  try{
+    const r = await fetch('https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/pokemon_species_names.csv');
+    const txt = await r.text();
+    const d = {};
+    for (const line of txt.split('\n').slice(1)){
+      const f = parseCSV(line); if (f.length < 3) continue;
+      const id = +f[0], lang = +f[1];
+      if (lang !== 6 && lang !== 9) continue;
+      (d[id] ||= {})[lang === 6 ? 'de' : 'en'] = f[2];
+    }
+    localStorage.setItem(DEXKEY, JSON.stringify(d));
+    setDex(d);
+  }catch(e){ st.textContent = 'Pokédex offline – Namen frei eingeben'; }
+}
+function parseCSV(line){
+  const out = []; let cur = '', q = false;
+  for (let i = 0; i < line.length; i++){
+    const c = line[i];
+    if (q){ if (c === '"'){ if (line[i+1] === '"'){ cur += '"'; i++; } else q = false; } else cur += c; }
+    else if (c === '"') q = true; else if (c === ','){ out.push(cur); cur = ''; } else if (c !== '\r') cur += c;
+  }
+  out.push(cur); return out;
+}
+function setDex(d){
+  DEX = d; NAME2ID = {};
+  const opts = [];
+  for (const id of Object.keys(d).map(Number).sort((a,b)=>a-b)){
+    const n = d[id]; const de = n.de || n.en;
+    if (n.de) NAME2ID[n.de.toLowerCase()] = id;
+    if (n.en) NAME2ID[n.en.toLowerCase()] ||= id;
+    opts.push(`<option value="${esc(de)}">#${id}${n.en && n.en !== de ? ' · ' + esc(n.en) : ''}</option>`);
+  }
+  document.getElementById('dlSpecies').innerHTML = opts.join('');
+  document.getElementById('dbstate').textContent = '';
+}
+const sprite = (id, shiny) => id ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/home/${shiny ? 'shiny/' : ''}${id}.png` : '';
+const nameOf = id => DEX[id]?.de || DEX[id]?.en || '';
+
+/* ===================== Vivillon ===================== */
+const VIV = [
+  ['archipelago','Archipel','Archipelago','#d9a54a'], ['continental','Kontinental','Continental','#e8c63b'],
+  ['elegant','Pracht','Elegant','#7a5bb7'], ['garden','Garten','Garden','#4f9d5b'],
+  ['highplains','Dünen','High Plains','#d0832e'], ['icysnow','Schneefeld','Icy Snow','#b9c9d6'],
+  ['jungle','Dschungel','Jungle','#3f8f7b'], ['marine','Aquamarin','Marine','#4f7fd0'],
+  ['meadow','Blumen','Meadow','#e57fa2'], ['modern','Modern','Modern','#c84a3c'],
+  ['monsoon','Monsun','Monsoon','#6a7c8c'], ['ocean','Ozean','Ocean','#e77a4a'],
+  ['polar','Polar','Polar','#4e6fa8'], ['river','Fluss','River','#a7865a'],
+  ['sandstorm','Sandsturm','Sandstorm','#c9ad7a'], ['savanna','Savanne','Savanna','#3e9fa3'],
+  ['sun','Sonnen','Sun','#e5533d'], ['tundra','Tundra','Tundra','#7fb0dd'],
+  ['fancy','Fächer (Event)','Fancy','#e9a3c4'], ['pokeball','Pokéball (Event)','Poké Ball','#d23b3b']
+];
+const VIVMAP = Object.fromEntries(VIV.map(v => [v[0], v]));
+const vivLabel = k => VIVMAP[k] ? `${VIVMAP[k][1]}muster (${VIVMAP[k][2]})`.replace(' (Event)muster', 'muster (Event)') : '';
+const vivDot = k => VIVMAP[k] ? `<span class="dot" style="background:${VIVMAP[k][3]}"></span>` : '';
+// Grobe Startvorschläge. Muster hängen von der Region innerhalb eines Landes ab –
+// das Tool merkt sich deine eigenen Zuordnungen und schlägt diese bevorzugt vor.
+const VIV_HINTS = {
+  'deutschland':['continental','meadow'], 'niedersachsen':['continental'], 'österreich':['meadow','continental'],
+  'schweiz':['meadow'], 'frankreich':['meadow'], 'portugal':['marine'], 'spanien':['marine','sun'],
+  'italien':['marine','meadow'], 'großbritannien':['meadow','marine'], 'vereinigtes königreich':['meadow','marine'],
+  'japan':['elegant','garden','continental','tundra'], 'hawaii':['ocean'], 'australien':['river','garden'],
+  'neuseeland':['garden'], 'brasilien':['savanna','jungle'], 'indien':['monsoon','sandstorm'],
+  'ägypten':['sandstorm'], 'saudi-arabien':['sandstorm'], 'mexiko':['sun','highplains'],
+  'usa':['modern','highplains','polar','icysnow','archipelago','ocean'], 'kanada':['polar','icysnow','tundra'],
+  'karibik':['archipelago'], 'kuba':['archipelago'], 'jamaika':['archipelago'], 'puerto rico':['archipelago'],
+  'indonesien':['jungle'], 'malaysia':['jungle'], 'thailand':['monsoon','jungle'], 'russland':['tundra','continental','polar'],
+  'chile':['ocean','marine'], 'argentinien':['marine','savanna']
+};
+function vivSuggest(region){
+  const r = (region || '').trim().toLowerCase(); if (!r) return [];
+  if (S.regionHints[r]) return [S.regionHints[r]];
+  if (VIV_HINTS[r]) return VIV_HINTS[r];
+  for (const k of Object.keys(S.regionHints)) if (r.includes(k) || k.includes(r)) return [S.regionHints[k]];
+  for (const k of Object.keys(VIV_HINTS)) if (r.includes(k)) return VIV_HINTS[k];
+  return [];
+}
+// Purmel-Begegnungen: 3 Karten → 1., +9 → 2., danach je +15
+function vivEncounters(n){ if (n < 3) return [0, 3]; if (n < 12) return [1, 12]; const k = Math.floor((n - 12) / 15); return [2 + k, 12 + 15 * (k + 1)]; }
+
+/* ===================== Freundschaft ===================== */
+const FL = ['Freund', 'Gute Freunde', 'Super Freunde', 'Ultra Freunde', 'Beste Freunde'];
+const FT = [0, 1, 7, 30, 90]; // Tage Interaktion für das jeweilige Level
+const levelFromDays = d => FT.reduce((l, t, i) => d >= t ? i : l, 0);
+function friendProgress(f){
+  const lvl = f.level || 0;
+  if (lvl >= 4) return { pct: 100, left: 0, next: null };
+  const from = FT[lvl], to = FT[lvl + 1];
+  const done = Math.max(0, (f.days || 0) - from);
+  return { pct: Math.min(100, done / (to - from) * 100), left: Math.max(0, to - (f.days || 0)), next: FL[lvl + 1] };
+}
+function activity(f){
+  const sn = (f.snaps || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+  if (!sn.length) return { cls: 'uk', txt: 'Keine Daten', detail: '' };
+  const last = sn[sn.length - 1];
+  const age = daysBetween(last.date, today());
+  if (sn.length < 2) return { cls: 'uk', txt: 'Erst 1 Eintrag', detail: `Lv ${last.lvl ?? '?'} · ${nf(last.xp)} EP`, last, age };
+  // Vergleich mit dem ältesten Eintrag der letzten ~30 Tage (mind. der vorletzte)
+  let ref = sn[sn.length - 2];
+  for (let i = sn.length - 2; i >= 0; i--){ if (daysBetween(sn[i].date, last.date) <= 30) ref = sn[i]; else break; }
+  const dd = Math.max(1, daysBetween(ref.date, last.date));
+  const gain = (last.xp ?? 0) - (ref.xp ?? 0);
+  const perDay = Math.round(gain / dd);
+  let cls = 'ok', txt = 'Aktiv';
+  if (gain <= 0) { cls = 'no'; txt = 'Inaktiv'; }
+  else if (perDay < 2000) { cls = 'lo'; txt = 'Wenig aktiv'; }
+  let detail = `+${nf(gain)} EP in ${dd} T (≈ ${nf(perDay)}/Tag)`;
+  if (age > 21) detail += ` · letzter Eintrag vor ${age} T`;
+  return { cls, txt, detail, last, age, perDay };
+}
+
+/* ===================== Rendering ===================== */
+let TAB = 'mons';
+const F = { q: '', sort: 'new', flt: '' };
+const FF = { q: '', sort: 'level' };
+document.getElementById('tabs').onclick = e => { const t = e.target.dataset.t; if (!t) return; TAB = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); render(); };
+function render(){
+  refreshLists();
+  ({ mons: renderMons, friends: renderFriends, cards: renderCards, viv: renderViv, data: renderData })[TAB]();
+}
+function refreshLists(){
+  const cos = new Set(['Partyhut','Weihnachtsmütze','Halloween-Kostüm','Neujahrshut','Blumenkrone','Sonnenbrille','Detektivmütze','Pikachu-Mütze','Fest-Krone','Ash-Mütze']);
+  const moves = new Set();
+  S.pokemon.forEach(p => { if (p.costume) cos.add(p.costume); [p.fast, p.c1, p.c2].forEach(m => m && moves.add(m)); });
+  document.getElementById('dlCostume').innerHTML = [...cos].sort().map(c => `<option value="${esc(c)}">`).join('');
+  document.getElementById('dlMoves').innerHTML = [...moves].sort().map(c => `<option value="${esc(c)}">`).join('');
+  const reg = new Set(Object.keys(VIV_HINTS).map(k => k[0].toUpperCase() + k.slice(1)));
+  S.postcards.forEach(c => c.region && reg.add(c.region));
+  document.getElementById('dlRegion').innerHTML = [...reg].sort().map(c => `<option value="${esc(c)}">`).join('');
+}
+const ivPct = p => (p.ivA == null || p.ivD == null || p.ivH == null) ? null : Math.round((p.ivA + p.ivD + p.ivH) / 45 * 100);
+function ivStars(p){
+  const s = (p.ivA ?? -1) + (p.ivD ?? -1) + (p.ivH ?? -1);
+  if (s < 0 || p.ivA == null) return '';
+  const n = s === 45 ? 4 : s >= 37 ? 3 : s >= 30 ? 2 : s >= 23 ? 1 : 0;
+  return n === 4 ? '<span class="stars" title="Perfekt">★★★ 100</span>' : `<span class="stars">${'★'.repeat(n)}${'☆'.repeat(3 - n)}</span>`;
+}
+
+function renderMons(){
+  let list = S.pokemon.slice();
+  const q = F.q.trim().toLowerCase();
+  if (q) list = list.filter(p => [p.name, p.nick, p.form, p.costume, p.tags, p.location, p.notes, p.fast, p.c1, p.c2, '#' + p.dex].join(' ').toLowerCase().includes(q));
+  const fl = F.flt;
+  if (fl === 'shiny') list = list.filter(p => p.shiny);
+  if (fl === 'costume') list = list.filter(p => p.costume);
+  if (fl === 'shadow') list = list.filter(p => p.align === 'shadow');
+  if (fl === 'purified') list = list.filter(p => p.align === 'purified');
+  if (fl === 'lucky') list = list.filter(p => p.lucky);
+  if (fl === 'hundo') list = list.filter(p => ivPct(p) === 100);
+  if (fl === 'fav') list = list.filter(p => p.fav);
+  if (fl === 'dyna') list = list.filter(p => p.dyna);
+  const so = {
+    new: (a, b) => (b.added || '').localeCompare(a.added || ''),
+    dex: (a, b) => (a.dex || 9999) - (b.dex || 9999) || (b.cp || 0) - (a.cp || 0),
+    cp: (a, b) => (b.cp || 0) - (a.cp || 0),
+    iv: (a, b) => (ivPct(b) ?? -1) - (ivPct(a) ?? -1),
+    name: (a, b) => (a.name || '').localeCompare(b.name || '', 'de')
+  }[F.sort];
+  list.sort(so);
+  const all = S.pokemon;
+  main.innerHTML = `
+    <div class="stat">
+      <div class="card"><b>${all.length}</b><span class="muted">Pokémon</span></div>
+      <div class="card"><b>${new Set(all.map(p => p.dex).filter(Boolean)).size}</b><span class="muted">Arten</span></div>
+      <div class="card"><b>${all.filter(p => p.shiny).length}</b><span class="muted">Shiny</span></div>
+      <div class="card"><b>${all.filter(p => p.costume).length}</b><span class="muted">Kostüme</span></div>
+      <div class="card"><b>${all.filter(p => ivPct(p) === 100).length}</b><span class="muted">100 %</span></div>
+    </div>
+    <div class="bar">
+      <button class="b p" id="addMon">+ Pokémon</button>
+      <input id="q" placeholder="Suchen (Name, Kostüm, Tag, Attacke…)" value="${esc(F.q)}" style="flex:1;min-width:180px">
+      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="sort">${[['new', 'Neueste'], ['dex', 'Pokédex-Nr.'], ['cp', 'WP'], ['iv', 'IV'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    </div>
+    ${list.length ? `<div class="grid">${list.map(monCard).join('')}</div>` : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Pokémon eingetragen.'}</div>`}`;
+  addMon.onclick = () => editMon();
+  const qi = document.getElementById('q');
+  qi.oninput = e => { F.q = e.target.value; renderMons(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+  flt.onchange = e => { F.flt = e.target.value; renderMons(); };
+  sort.onchange = e => { F.sort = e.target.value; renderMons(); };
+  main.querySelectorAll('.mon').forEach(el => el.onclick = () => editMon(S.pokemon.find(p => p.id === el.dataset.id)));
+}
+function monCard(p){
+  const iv = ivPct(p);
+  const b = [];
+  if (p.shiny) b.push('<span class="bd sh">✨ Shiny</span>');
+  if (p.align === 'shadow') b.push('<span class="bd cr">Crypto</span>');
+  if (p.align === 'purified') b.push('<span class="bd er">Erlöst</span>');
+  if (p.lucky) b.push('<span class="bd lu">Glücks</span>');
+  if (p.dyna) b.push(`<span class="bd dy">${p.dyna === 'giga' ? 'Gigadynamax' : 'Dynamax'}</span>`);
+  if (p.costume) b.push(`<span class="bd">🎩 ${esc(p.costume)}</span>`);
+  if (p.viv) b.push(`<span class="bd">${vivDot(p.viv)}${esc(VIVMAP[p.viv]?.[1] || '')}</span>`);
+  const sub = [p.form, p.gender === 'm' ? '♂' : p.gender === 'f' ? '♀' : ''].filter(Boolean).join(' · ');
+  return `<div class="card mon" data-id="${p.id}">
+    ${p.fav ? '<span class="fav">★</span>' : ''}
+    <img loading="lazy" src="${sprite(p.dex, p.shiny)}" alt="" onerror="this.style.visibility='hidden'">
+    <div class="nm">${esc(p.nick || p.name || '?')}${p.nick ? ` <span class="muted" style="font-weight:400">(${esc(p.name)})</span>` : ''}</div>
+    <div class="sub">${esc(sub)}</div>
+    <div class="ivrow"><span>WP <b class="ivp">${p.cp ?? '–'}</b></span><span>Lv ${p.level ?? '–'}</span><span>${iv == null ? 'IV –' : `<b class="ivp">${iv} %</b>`}</span></div>
+    <div class="ivrow"><span>${p.ivA ?? '–'}/${p.ivD ?? '–'}/${p.ivH ?? '–'}</span>${ivStars(p)}</div>
+    <div class="badges">${b.join('')}</div>
+  </div>`;
+}
+
+function editMon(p){
+  const isNew = !p; p = p || { id: uid(), added: new Date().toISOString(), caught: today() };
+  const o = (v, l, cur) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`;
+  openDlg(isNew ? 'Pokémon hinzufügen' : 'Pokémon bearbeiten', `
+    <div class="row" style="align-items:flex-start;margin-bottom:10px">
+      <img id="pv" src="${sprite(p.dex, p.shiny)}" style="width:80px;height:80px;object-fit:contain" onerror="this.style.visibility='hidden'" onload="this.style.visibility='visible'">
+      <div class="fg sp">
+        <label>Pokémon<input name="name" list="dlSpecies" value="${esc(p.name)}" required autocomplete="off"></label>
+        <label>Dex-Nr.<input name="dex" type="number" min="1" max="1100" value="${p.dex ?? ''}"></label>
+        <label>Spitzname<input name="nick" value="${esc(p.nick)}"></label>
+      </div>
+    </div>
+    <div class="sec">Werte</div>
+    <div class="fg">
+      <label>WP<input name="cp" type="number" min="10" value="${p.cp ?? ''}"></label>
+      <label>KP (HP)<input name="hp" type="number" min="1" value="${p.hp ?? ''}"></label>
+      <label>Level<input name="level" type="number" min="1" max="51" step="0.5" value="${p.level ?? ''}"></label>
+      <label>IV Angriff<input name="ivA" type="number" min="0" max="15" value="${p.ivA ?? ''}"></label>
+      <label>IV Verteidigung<input name="ivD" type="number" min="0" max="15" value="${p.ivD ?? ''}"></label>
+      <label>IV KP<input name="ivH" type="number" min="0" max="15" value="${p.ivH ?? ''}"></label>
+    </div>
+    <div class="sec">Attacken</div>
+    <div class="fg">
+      <label>Sofortattacke<input name="fast" list="dlMoves" value="${esc(p.fast)}"></label>
+      <label>Ladeattacke 1<input name="c1" list="dlMoves" value="${esc(p.c1)}"></label>
+      <label>Ladeattacke 2<input name="c2" list="dlMoves" value="${esc(p.c2)}"></label>
+    </div>
+    <div class="sec">Aussehen & Besonderheiten</div>
+    <div class="fg">
+      <label>Kostüm<input name="costume" list="dlCostume" value="${esc(p.costume)}" placeholder="z. B. Partyhut"></label>
+      <label>Form<input name="form" value="${esc(p.form)}" placeholder="z. B. Alola, Galar, Hisui"></label>
+      <label>Geschlecht<select name="gender">${o('', '–', p.gender || '')}${o('m', '♂ männlich', p.gender)}${o('f', '♀ weiblich', p.gender)}</select></label>
+      <label>Typ<select name="align">${o('', 'Normal', p.align || '')}${o('shadow', 'Crypto', p.align)}${o('purified', 'Erlöst', p.align)}</select></label>
+      <label>Dynamax<select name="dyna">${o('', '–', p.dyna || '')}${o('dmax', 'Dynamax', p.dyna)}${o('giga', 'Gigadynamax', p.dyna)}</select></label>
+      <label id="vivWrap" style="display:none">Vivillon-Muster<select name="viv"><option value="">–</option>${VIV.map(v => o(v[0], v[1] + 'muster', p.viv)).join('')}</select></label>
+      <label class="chk"><input type="checkbox" name="shiny" ${p.shiny ? 'checked' : ''}> ✨ Shiny</label>
+      <label class="chk"><input type="checkbox" name="lucky" ${p.lucky ? 'checked' : ''}> Glücks</label>
+      <label class="chk"><input type="checkbox" name="fav" ${p.fav ? 'checked' : ''}> ★ Favorit</label>
+    </div>
+    <div class="sec">Herkunft</div>
+    <div class="fg">
+      <label>Gefangen am<input name="caught" type="date" value="${p.caught || ''}"></label>
+      <label>Ort<input name="location" value="${esc(p.location)}"></label>
+      <label>Tags<input name="tags" value="${esc(p.tags)}" placeholder="PvP, Raid, Tausch…"></label>
+    </div>
+    <label class="fl" style="margin-top:10px">Notizen<textarea name="notes">${esc(p.notes)}</textarea></label>`,
+    isNew ? '' : `<button class="b d" value="del" formnovalidate style="margin-right:auto">Löschen</button>`,
+    (fd, act) => {
+      if (act === 'del'){ if (confirm('Pokémon löschen?')){ S.pokemon = S.pokemon.filter(x => x.id !== p.id); save(); render(); } return; }
+      Object.assign(p, {
+        name: fd.get('name').trim(), dex: num(fd.get('dex')), nick: fd.get('nick').trim(),
+        cp: num(fd.get('cp')), hp: num(fd.get('hp')), level: num(fd.get('level')),
+        ivA: num(fd.get('ivA')), ivD: num(fd.get('ivD')), ivH: num(fd.get('ivH')),
+        fast: fd.get('fast').trim(), c1: fd.get('c1').trim(), c2: fd.get('c2').trim(),
+        costume: fd.get('costume').trim(), form: fd.get('form').trim(), gender: fd.get('gender'),
+        align: fd.get('align'), dyna: fd.get('dyna'), viv: [664, 665, 666].includes(num(fd.get('dex'))) ? fd.get('viv') : '',
+        shiny: !!fd.get('shiny'), lucky: !!fd.get('lucky'), fav: !!fd.get('fav'),
+        caught: fd.get('caught'), location: fd.get('location').trim(), tags: fd.get('tags').trim(), notes: fd.get('notes')
+      });
+      if (isNew) S.pokemon.push(p); save(); render();
+    });
+  const f = dlgForm, pv = document.getElementById('pv');
+  const upd = () => {
+    const id = num(f.dex.value);
+    pv.src = sprite(id, f.shiny.checked);
+    document.getElementById('vivWrap').style.display = [664, 665, 666].includes(id) ? '' : 'none';
+  };
+  f.name.oninput = () => { const id = NAME2ID[f.name.value.trim().toLowerCase()]; if (id){ f.dex.value = id; upd(); } };
+  f.dex.oninput = () => { const n = nameOf(num(f.dex.value)); if (n && !f.name.value) f.name.value = n; upd(); };
+  f.shiny.onchange = upd; upd();
+}
+
+/* ---------- Freunde ---------- */
+function renderFriends(){
+  let list = S.friends.slice();
+  const q = FF.q.trim().toLowerCase();
+  if (q) list = list.filter(f => [f.name, f.code, f.notes, f.region].join(' ').toLowerCase().includes(q));
+  const so = {
+    level: (a, b) => (b.level || 0) - (a.level || 0) || friendProgress(a).left - friendProgress(b).left,
+    next: (a, b) => (friendProgress(a).left || 999) - (friendProgress(b).left || 999),
+    name: (a, b) => a.name.localeCompare(b.name, 'de'),
+    act: (a, b) => (activity(a).perDay ?? -1) - (activity(b).perDay ?? -1)
+  }[FF.sort];
+  list.sort(so);
+  const t = today();
+  const doneToday = S.friends.filter(f => f.last === t).length;
+  main.innerHTML = `
+    <div class="stat">
+      <div class="card"><b>${S.friends.length}</b><span class="muted">Freunde</span></div>
+      ${FL.slice(1).map((l, i) => `<div class="card"><b>${S.friends.filter(f => (f.level || 0) === i + 1).length}</b><span class="muted">${l}</span></div>`).join('')}
+      <div class="card"><b>${doneToday}</b><span class="muted">heute interagiert</span></div>
+      <div class="card"><b>${S.friends.filter(f => activity(f).cls === 'no').length}</b><span class="muted">inaktiv</span></div>
+    </div>
+    <div class="bar">
+      <button class="b p" id="addF">+ Freund</button>
+      <input id="fq" placeholder="Suchen…" value="${esc(FF.q)}" style="flex:1;min-width:160px">
+      <select id="fs">${[['level', 'Freundschaftslevel'], ['next', 'Nächstes Level bald'], ['act', 'Inaktivste zuerst'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+    </div>
+    ${list.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">${list.map(friendCard).join('')}</div>` : `<div class="empty">${S.friends.length ? 'Nichts gefunden.' : 'Noch keine Freunde eingetragen.'}</div>`}`;
+  addF.onclick = () => editFriend();
+  fq.oninput = e => { FF.q = e.target.value; renderFriends(); const n = document.getElementById('fq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+  fs.onchange = e => { FF.sort = e.target.value; renderFriends(); };
+  main.querySelectorAll('[data-act]').forEach(b => b.onclick = e => {
+    e.stopPropagation();
+    const f = S.friends.find(x => x.id === b.dataset.id);
+    const a = b.dataset.act;
+    if (a === 'edit') return editFriend(f);
+    if (a === 'xp') return addSnap(f);
+    if (a === 'card') return editCard(null, f.id);
+    if (a === 'inter'){
+      if (f.last === today()){ f.days = Math.max(0, (f.days || 0) - 1); f.last = f.prevLast || ''; }
+      else { f.prevLast = f.last; f.days = (f.days || 0) + 1; f.last = today(); }
+      f.level = Math.max(f.level || 0, levelFromDays(f.days)); save(); renderFriends();
+    }
+    if (a === 'gift'){ f.giftSent = f.giftSent === today() ? '' : today(); save(); renderFriends(); }
+  });
+}
+function friendCard(f){
+  const pr = friendProgress(f), ac = activity(f), t = today();
+  const cards = S.postcards.filter(c => c.friendId === f.id);
+  const pats = [...new Set(cards.map(c => c.viv).filter(Boolean))];
+  const hearts = '♥'.repeat(f.level || 0) + '♡'.repeat(4 - (f.level || 0));
+  const eta = pr.left ? new Date(Date.now() + (pr.left - (f.last === t ? 0 : 1)) * 864e5).toLocaleDateString('de-DE') : '';
+  return `<div class="card fr">
+    <div class="row"><h3 class="sp">${esc(f.name)} ${f.lucky ? '<span class="bd lu">Glücks-Freund</span>' : ''}</h3><button class="b s" data-act="edit" data-id="${f.id}">✎</button></div>
+    <div class="muted" style="font-size:13px">${f.code ? esc(f.code) + ' · ' : ''}${esc(f.region || 'Herkunft unbekannt')}</div>
+    <div class="row" style="margin-top:8px"><span class="hearts" style="color:#e2557a">${hearts}</span><b class="sp">${FL[f.level || 0]}</b><span class="muted" style="font-size:13px">${f.days || 0} Tage</span></div>
+    <div class="prog"><i style="width:${pr.pct}%"></i></div>
+    <div class="note">${pr.next ? `Noch <b>${pr.left}</b> Tag${pr.left === 1 ? '' : 'e'} bis <b>${pr.next}</b>${eta ? ` · frühestens ${eta}` : ''}` : 'Maximales Level erreicht 🎉'}</div>
+    <div class="row" style="margin-top:10px">
+      <span class="st ${ac.cls}">${ac.txt}</span><span class="note sp">${ac.detail}</span>
+    </div>
+    ${pats.length ? `<div class="note" style="margin-top:6px">Vivillon: ${pats.map(k => vivDot(k) + esc(VIVMAP[k]?.[1])).join(', ')}</div>` : ''}
+    <div class="note" style="margin-top:4px">${cards.length} Postkarte${cards.length === 1 ? '' : 'n'}</div>
+    <div class="row" style="margin-top:10px">
+      <button class="b s ${f.last === t ? 'p' : ''}" data-act="inter" data-id="${f.id}">${f.last === t ? '✓ Heute interagiert' : 'Heute interagiert'}</button>
+      <button class="b s ${f.giftSent === t ? 'p' : ''}" data-act="gift" data-id="${f.id}">🎁 ${f.giftSent === t ? 'Gesendet' : 'Geschenk'}</button>
+      <button class="b s" data-act="xp" data-id="${f.id}">EP eintragen</button>
+      <button class="b s" data-act="card" data-id="${f.id}">+ Postkarte</button>
+    </div>
+  </div>`;
+}
+function editFriend(f){
+  const isNew = !f; f = f || { id: uid(), level: 0, days: 0, snaps: [], since: today() };
+  const pr = friendProgress(f);
+  const snaps = (f.snaps || []).slice().sort((a, b) => b.date.localeCompare(a.date));
+  openDlg(isNew ? 'Freund hinzufügen' : esc(f.name), `
+    <div class="fg">
+      <label>Name / Trainername<input name="name" value="${esc(f.name)}" required></label>
+      <label>Freundescode<input name="code" value="${esc(f.code)}" placeholder="1234 5678 9012"></label>
+      <label>Herkunft (Land/Region)<input name="region" list="dlRegion" value="${esc(f.region)}"></label>
+      <label>Freunde seit<input name="since" type="date" value="${f.since || ''}"></label>
+    </div>
+    <div class="sec">Freundschaft</div>
+    <div class="fg">
+      <label>Level<select name="level">${FL.map((l, i) => `<option value="${i}" ${(f.level || 0) === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>Resttage laut Spiel<input name="left" type="number" min="0" max="89" value="${pr.next ? pr.left : ''}" placeholder="z. B. 23"></label>
+      <label class="chk"><input type="checkbox" name="lucky" ${f.lucky ? 'checked' : ''}> Glücks-Freund</label>
+    </div>
+    <p class="note">Trag die Resttage ein, die das Spiel im Freundesprofil anzeigt – das Tool rechnet ab dann mit „Heute interagiert“ weiter.</p>
+    <label class="fl">Notizen<textarea name="notes">${esc(f.notes)}</textarea></label>
+    ${snaps.length ? `<div class="sec">EP-Verlauf</div><table><tr><th>Datum</th><th>Level</th><th>EP gesamt</th><th>Δ</th><th></th></tr>
+      ${snaps.map((s, i) => { const prev = snaps[i + 1]; return `<tr><td>${fmtDate(s.date)}</td><td>${s.lvl ?? '–'}</td><td>${nf(s.xp)}</td><td>${prev && s.xp != null && prev.xp != null ? '+' + nf(s.xp - prev.xp) : ''}</td><td><button class="b s d" type="button" data-snap="${s.date}">✕</button></td></tr>`; }).join('')}</table>` : ''}`,
+    isNew ? '' : `<button class="b d" value="del" formnovalidate style="margin-right:auto">Löschen</button>`,
+    (fd, act) => {
+      if (act === 'del'){ if (confirm(`${f.name} löschen? Postkarten bleiben erhalten.`)){ S.friends = S.friends.filter(x => x.id !== f.id); S.postcards.forEach(c => { if (c.friendId === f.id) c.friendId = ''; }); save(); render(); } return; }
+      const lvl = +fd.get('level'), left = num(fd.get('left'));
+      Object.assign(f, { name: fd.get('name').trim(), code: fd.get('code').trim(), region: fd.get('region').trim(), since: fd.get('since'), lucky: !!fd.get('lucky'), notes: fd.get('notes') });
+      if (lvl !== (f.level || 0) || left != null){
+        f.level = lvl;
+        f.days = lvl >= 4 ? Math.max(f.days || 0, 90) : (left != null ? Math.max(FT[lvl], FT[lvl + 1] - left) : FT[lvl]);
+      }
+      if (isNew) S.friends.push(f); save(); render();
+    });
+  dlgB.querySelectorAll('[data-snap]').forEach(b => b.onclick = () => { f.snaps = f.snaps.filter(s => s.date !== b.dataset.snap); save(); b.closest('tr').remove(); render(); });
+}
+function addSnap(f){
+  const last = (f.snaps || []).slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+  openDlg(`EP von ${esc(f.name)}`, `
+    <div class="fg">
+      <label>Datum<input name="date" type="date" value="${today()}" required></label>
+      <label>Trainerlevel<input name="lvl" type="number" min="1" max="80" value="${last?.lvl ?? ''}"></label>
+      <label>EP gesamt<input name="xp" type="number" min="0" required placeholder="${last ? nf(last.xp) : 'z. B. 12500000'}"></label>
+    </div>
+    <p class="note">Im Freundesprofil die Gesamt-EP ablesen. Ab zwei Einträgen zeigt das Tool, wie aktiv jemand ist (Vergleich über bis zu 30 Tage).</p>`, '',
+    fd => {
+      f.snaps ||= [];
+      const s = { date: fd.get('date'), lvl: num(fd.get('lvl')), xp: num(fd.get('xp')) };
+      f.snaps = f.snaps.filter(x => x.date !== s.date); f.snaps.push(s); save(); render();
+    });
+}
+
+/* ---------- Postkarten ---------- */
+const CF = { q: '', viv: '', fr: '' };
+function renderCards(){
+  let list = S.postcards.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const q = CF.q.trim().toLowerCase();
+  if (q) list = list.filter(c => [c.place, c.region, c.notes].join(' ').toLowerCase().includes(q));
+  if (CF.viv) list = list.filter(c => c.viv === CF.viv);
+  if (CF.fr) list = list.filter(c => c.friendId === CF.fr);
+  const fname = id => S.friends.find(f => f.id === id)?.name || '–';
+  main.innerHTML = `
+    <div class="bar">
+      <button class="b p" id="addC">+ Postkarte</button>
+      <input id="cq" placeholder="Ort/Region suchen…" value="${esc(CF.q)}" style="flex:1;min-width:160px">
+      <select id="cv"><option value="">Alle Muster</option>${VIV.map(v => `<option value="${v[0]}" ${CF.viv === v[0] ? 'selected' : ''}>${v[1]}muster</option>`).join('')}</select>
+      <select id="cf"><option value="">Alle Freunde</option>${S.friends.slice().sort((a, b) => a.name.localeCompare(b.name, 'de')).map(f => `<option value="${f.id}" ${CF.fr === f.id ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select>
+    </div>
+    ${list.length ? `<div class="card" style="padding:0;overflow-x:auto"><table>
+      <tr><th>Datum</th><th>PokéStop / Ort</th><th>Land / Region</th><th>Vivillon</th><th>Von</th><th>Angepinnt</th><th></th></tr>
+      ${list.map(c => `<tr><td>${fmtDate(c.date)}</td><td>${esc(c.place)}</td><td>${esc(c.region)}</td><td>${c.viv ? vivDot(c.viv) + esc(VIVMAP[c.viv]?.[1]) : '<span class="muted">?</span>'}</td><td>${esc(fname(c.friendId))}</td><td>${c.pinned ? '📌' : ''}</td><td><button class="b s" data-c="${c.id}">✎</button></td></tr>`).join('')}
+    </table></div>` : `<div class="empty">${S.postcards.length ? 'Nichts gefunden.' : 'Noch keine Postkarten eingetragen.'}</div>`}`;
+  addC.onclick = () => editCard();
+  cq.oninput = e => { CF.q = e.target.value; renderCards(); const n = document.getElementById('cq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+  cv.onchange = e => { CF.viv = e.target.value; renderCards(); };
+  cf.onchange = e => { CF.fr = e.target.value; renderCards(); };
+  main.querySelectorAll('[data-c]').forEach(b => b.onclick = () => editCard(S.postcards.find(c => c.id === b.dataset.c)));
+}
+function editCard(c, friendId){
+  const isNew = !c; c = c || { id: uid(), date: today(), friendId: friendId || '', pinned: true };
+  const fr = S.friends.find(f => f.id === c.friendId);
+  if (isNew && fr && fr.region) c.region = fr.region;
+  openDlg(isNew ? 'Postkarte eintragen' : 'Postkarte bearbeiten', `
+    <div class="fg">
+      <label>Von Freund<select name="friendId"><option value="">–</option>${S.friends.slice().sort((a, b) => a.name.localeCompare(b.name, 'de')).map(f => `<option value="${f.id}" ${c.friendId === f.id ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select></label>
+      <label>Erhalten am<input name="date" type="date" value="${c.date || ''}"></label>
+      <label>PokéStop / Ort<input name="place" value="${esc(c.place)}"></label>
+      <label>Land / Region<input name="region" list="dlRegion" value="${esc(c.region)}" placeholder="z. B. Portugal, Niedersachsen"></label>
+      <label>Vivillon-Muster<select name="viv"><option value="">unbekannt</option>${VIV.slice(0, 18).map(v => `<option value="${v[0]}" ${c.viv === v[0] ? 'selected' : ''}>${v[1]}muster (${v[2]})</option>`).join('')}</select></label>
+      <label class="chk"><input type="checkbox" name="pinned" ${c.pinned ? 'checked' : ''}> 📌 Angepinnt</label>
+    </div>
+    <p class="note" id="vivHint"></p>
+    <label class="fl">Notizen<textarea name="notes">${esc(c.notes)}</textarea></label>`,
+    isNew ? '' : `<button class="b d" value="del" formnovalidate style="margin-right:auto">Löschen</button>`,
+    (fd, act) => {
+      if (act === 'del'){ if (confirm('Postkarte löschen?')){ S.postcards = S.postcards.filter(x => x.id !== c.id); save(); render(); } return; }
+      Object.assign(c, { friendId: fd.get('friendId'), date: fd.get('date'), place: fd.get('place').trim(), region: fd.get('region').trim(), viv: fd.get('viv'), pinned: !!fd.get('pinned'), notes: fd.get('notes') });
+      if (c.region && c.viv) S.regionHints[c.region.toLowerCase()] = c.viv;
+      const f = S.friends.find(x => x.id === c.friendId);
+      if (f && !f.region && c.region) f.region = c.region;
+      if (isNew) S.postcards.push(c); save(); render();
+    });
+  const f = dlgForm, hint = document.getElementById('vivHint');
+  const upd = () => {
+    const s = vivSuggest(f.region.value);
+    if (!s.length){ hint.innerHTML = 'Das Muster siehst du im Spiel, wenn du auf die Vivillon-Medaille tippst (Weltkarte der Regionen).'; return; }
+    if (s.length === 1 && !f.viv.value && S.regionHints[f.region.value.trim().toLowerCase()]) f.viv.value = s[0];
+    hint.innerHTML = 'Mögliche Muster für diese Region: ' + s.map(k => `<button type="button" class="b s" data-v="${k}">${vivDot(k)}${VIVMAP[k][1]}</button>`).join(' ') + '<br>Innerhalb eines Landes können sich die Muster unterscheiden – im Zweifel die Vivillon-Medaille im Spiel prüfen.';
+    hint.querySelectorAll('[data-v]').forEach(b => b.onclick = () => f.viv.value = b.dataset.v);
+  };
+  f.region.oninput = upd;
+  f.friendId.onchange = () => { const fr = S.friends.find(x => x.id === f.friendId.value); if (fr?.region && !f.region.value){ f.region.value = fr.region; upd(); } };
+  upd();
+}
+
+/* ---------- Vivillon ---------- */
+function renderViv(){
+  const pinned = S.postcards.filter(c => c.pinned && c.viv);
+  const pats = VIV.slice(0, 18);
+  const owned = k => S.pokemon.some(p => p.dex === 666 && p.viv === k);
+  const wip = k => S.pokemon.some(p => (p.dex === 664 || p.dex === 665) && p.viv === k);
+  const nOwned = pats.filter(v => owned(v[0])).length;
+  main.innerHTML = `
+    <div class="stat">
+      <div class="card"><b>${nOwned} / 18</b><span class="muted">Muster als Vivillon</span></div>
+      <div class="card"><b>${new Set(pinned.map(c => c.viv)).size} / 18</b><span class="muted">Regionen mit Postkarten</span></div>
+      <div class="card"><b>${pinned.length}</b><span class="muted">angepinnte Karten mit Muster</span></div>
+    </div>
+    <p class="note">Purmel-Begegnung nach 3 angepinnten Postkarten einer Region, die nächste nach 9 weiteren, danach alle 15. Besitz wird aus deinen Pokémon (Purmel/Puponcho/Vivillon mit Muster) erkannt.</p>
+    <div class="viv">${pats.map(v => {
+      const n = pinned.filter(c => c.viv === v[0]).length;
+      const [enc, nxt] = vivEncounters(n);
+      const prev = enc === 0 ? 0 : enc === 1 ? 3 : 12 + 15 * (enc - 2);
+      const pct = Math.min(100, (n - prev) / (nxt - prev) * 100);
+      const friends = [...new Set(S.postcards.filter(c => c.viv === v[0]).map(c => S.friends.find(f => f.id === c.friendId)?.name).filter(Boolean))];
+      return `<div class="card ${owned(v[0]) ? 'own' : ''}">
+        <div class="row"><b class="sp">${vivDot(v[0])}${v[1]}</b>${owned(v[0]) ? '✅' : wip(v[0]) ? '🐛' : ''}</div>
+        <div class="note">${v[2]}</div>
+        <div class="prog"><i style="width:${pct}%;background:${v[3]}"></i></div>
+        <div class="note">${n} Karte${n === 1 ? '' : 'n'} · ${enc} Begegnung${enc === 1 ? '' : 'en'}<br>Nächste bei ${nxt}</div>
+        ${friends.length ? `<div class="note" style="margin-top:4px">Von: ${friends.map(esc).join(', ')}</div>` : ''}
+      </div>`;
+    }).join('')}</div>`;
+}
+
+/* ---------- Daten ---------- */
+function renderData(){
+  main.innerHTML = `
+    <div class="card" style="max-width:640px">
+      <h3 style="margin-top:0">Sicherung</h3>
+      <p class="note">Alles wird nur in diesem Browser gespeichert (localStorage). Exportiere regelmäßig eine Sicherung – damit kannst du deine Daten auch auf ein anderes Gerät übertragen.</p>
+      <div class="row">
+        <button class="b p" id="exp">Exportieren (JSON)</button>
+        <label class="b" style="cursor:pointer">Importieren…<input type="file" id="imp" accept=".json,application/json" hidden></label>
+      </div>
+      <h3>Statistik</h3>
+      <p>${S.pokemon.length} Pokémon · ${S.friends.length} Freunde · ${S.postcards.length} Postkarten</p>
+      <h3>Pokédex-Namen</h3>
+      <p class="note">Namen und Bilder kommen von PokéAPI. Bei neuen Pokémon hier neu laden.</p>
+      <button class="b" id="redex">Pokédex neu laden</button>
+      <h3 style="color:var(--bad)">Zurücksetzen</h3>
+      <button class="b d" id="wipe">Alle Daten löschen</button>
+    </div>`;
+  exp.onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }));
+    a.download = `go-organizer-${today()}.json`; a.click();
+  };
+  imp.onchange = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    try{
+      const d = JSON.parse(await file.text());
+      if (!Array.isArray(d.pokemon) || !Array.isArray(d.friends)) throw new Error('Unbekanntes Format');
+      if (!confirm('Aktuelle Daten durch die Sicherung ersetzen?')) return;
+      S = Object.assign(blank(), d); save(); render(); alert('Import erfolgreich.');
+    }catch(err){ alert('Import fehlgeschlagen: ' + err.message); }
+  };
+  redex.onclick = () => { localStorage.removeItem(DEXKEY); loadDex(); };
+  wipe.onclick = () => { if (confirm('Wirklich ALLE Daten löschen?') && confirm('Sicher? Das kann nicht rückgängig gemacht werden.')){ S = blank(); save(); render(); } };
+}
+
+/* ===================== Dialog-Helfer ===================== */
+let dlgCb = null;
+function openDlg(title, body, extraBtns, cb){
+  dlgT.innerHTML = title; dlgB.innerHTML = body;
+  dlgF.innerHTML = `${extraBtns}<button class="b" value="cancel" formnovalidate>Abbrechen</button><button class="b p" value="ok">Speichern</button>`;
+  dlgCb = cb; dlg.showModal();
+  const first = dlgB.querySelector('input:not([type=checkbox]),select'); if (first) first.focus();
+}
+dlgForm.addEventListener('submit', e => {
+  const act = e.submitter?.value;
+  if (act === 'cancel') return;
+  if (dlgCb) dlgCb(new FormData(dlgForm), act);
+});
+
+/* ===================== Theme & Start ===================== */
+const TH = 'go-organizer-theme';
+function applyTheme(t){ if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }
+try{ applyTheme(localStorage.getItem(TH)); }catch(e){}
+themeBtn.onclick = () => {
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  const t = dark ? 'light' : 'dark'; applyTheme(t); try{ localStorage.setItem(TH, t); }catch(e){}
+};
+render();
+loadDex();
+</script>
+</body>
+</html>
