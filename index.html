@@ -128,7 +128,8 @@ const nf = n => n == null ? '–' : n.toLocaleString('de-DE');
 /* ===================== Pokédex (Namen via PokéAPI-CSV) ===================== */
 let DEX = {};          // id -> {de, en}
 let NAME2ID = {};      // lower name -> id
-const DEXKEY = 'go-organizer-dex';
+const DEXKEY = 'go-organizer-dex-v2';
+try{ localStorage.removeItem('go-organizer-dex'); }catch(e){}
 async function loadDex(){
   const st = document.getElementById('dbstate');
   try{ const c = JSON.parse(localStorage.getItem(DEXKEY)); if (c && Object.keys(c).length > 900){ setDex(c); return; } }catch(e){}
@@ -136,13 +137,16 @@ async function loadDex(){
   try{
     const r = await fetch('https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/pokemon_species_names.csv');
     const txt = await r.text();
-    const d = {};
+    // alle Sprachen einlesen, dann Deutsch/Englisch anhand von #6 (Glurak/Charizard) sicher bestimmen
+    const raw = {};
     for (const line of txt.split('\n').slice(1)){
-      const f = parseCSV(line); if (f.length < 3) continue;
-      const id = +f[0], lang = +f[1];
-      if (lang !== 6 && lang !== 9) continue;
-      (d[id] ||= {})[lang === 6 ? 'de' : 'en'] = f[2];
+      const f = parseCSV(line); if (f.length < 3 || !f[2]) continue;
+      (raw[+f[0]] ||= {})[f[1]] = f[2];
     }
+    const langOf = n => Object.keys(raw[6] || {}).find(l => raw[6][l] === n);
+    const de = langOf('Glurak') || '6', en = langOf('Charizard') || '9';
+    const d = {};
+    for (const id of Object.keys(raw)) d[id] = { de: raw[id][de], en: raw[id][en] };
     localStorage.setItem(DEXKEY, JSON.stringify(d));
     setDex(d);
   }catch(e){ st.textContent = 'Pokédex offline – Namen frei eingeben'; }
@@ -167,6 +171,14 @@ function setDex(d){
   }
   document.getElementById('dlSpecies').innerHTML = opts.join('');
   document.getElementById('dbstate').textContent = '';
+  // bereits gespeicherte Pokémon auf deutsche Namen umstellen
+  let changed = false;
+  for (const p of S.pokemon){
+    const id = p.dex || NAME2ID[(p.name || '').toLowerCase()];
+    const de = id && DEX[id]?.de;
+    if (de && p.name !== de){ p.name = de; p.dex = id; changed = true; }
+  }
+  if (changed){ save(); render(); }
 }
 const sprite = (id, shiny) => id ? `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/home/${shiny ? 'shiny/' : ''}${id}.png` : '';
 const nameOf = id => DEX[id]?.de || DEX[id]?.en || '';
@@ -386,7 +398,7 @@ function editMon(p){
     (fd, act) => {
       if (act === 'del'){ if (confirm('Pokémon löschen?')){ S.pokemon = S.pokemon.filter(x => x.id !== p.id); save(); render(); } return; }
       Object.assign(p, {
-        name: fd.get('name').trim(), dex: num(fd.get('dex')), nick: fd.get('nick').trim(),
+        name: (DEX[num(fd.get('dex'))]?.de) || fd.get('name').trim(), dex: num(fd.get('dex')), nick: fd.get('nick').trim(),
         cp: num(fd.get('cp')), hp: num(fd.get('hp')), level: num(fd.get('level')),
         ivA: num(fd.get('ivA')), ivD: num(fd.get('ivD')), ivH: num(fd.get('ivH')),
         fast: fd.get('fast').trim(), c1: fd.get('c1').trim(), c2: fd.get('c2').trim(),
@@ -404,6 +416,7 @@ function editMon(p){
     document.getElementById('vivWrap').style.display = [664, 665, 666].includes(id) ? '' : 'none';
   };
   f.name.oninput = () => { const id = NAME2ID[f.name.value.trim().toLowerCase()]; if (id){ f.dex.value = id; upd(); } };
+  f.name.onchange = () => { const id = NAME2ID[f.name.value.trim().toLowerCase()]; if (id && DEX[id]?.de) f.name.value = DEX[id].de; };
   f.dex.oninput = () => { const n = nameOf(num(f.dex.value)); if (n && !f.name.value) f.name.value = n; upd(); };
   f.shiny.onchange = upd; upd();
 }
