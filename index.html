@@ -47,6 +47,7 @@ button.d{color:var(--bad)}
 .bd{font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px;background:var(--acc2);color:var(--acc)}
 .bd.sh{background:#fff3c4;color:#8a6500}.bd.cr{background:#ece3ff;color:#5b2fb5}.bd.lu{background:#fff0c2;color:#9a6c00}
 .bd.er{background:#e2f6ff;color:#0b6c91}.bd.dy{background:#ffe2ea;color:#b0244b}
+.bd.bg{background:#e3f7e9;color:#1b7a43}.bd.sz{background:#f0e6da;color:#7a4b1b}
 .ivrow{display:flex;justify-content:space-between;font-size:13px;margin-top:6px;color:var(--muted)}
 .ivp{font-weight:800;color:var(--ink)}
 .stars{color:var(--gold);letter-spacing:1px}
@@ -108,6 +109,7 @@ dialog::backdrop{background:rgba(10,15,30,.5)}
 <datalist id="dlSpecies"></datalist>
 <datalist id="dlCostume"></datalist>
 <datalist id="dlMoves"></datalist>
+<datalist id="dlBg"></datalist>
 <datalist id="dlRegion"></datalist>
 
 <script>
@@ -252,8 +254,9 @@ function render(){
 }
 function refreshLists(){
   const cos = new Set(['Partyhut','Weihnachtsmütze','Halloween-Kostüm','Neujahrshut','Blumenkrone','Sonnenbrille','Detektivmütze','Pikachu-Mütze','Fest-Krone','Ash-Mütze']);
-  const moves = new Set();
-  S.pokemon.forEach(p => { if (p.costume) cos.add(p.costume); [p.fast, p.c1, p.c2].forEach(m => m && moves.add(m)); });
+  const moves = new Set(), bgs = new Set();
+  S.pokemon.forEach(p => { if (p.costume) cos.add(p.costume); if (p.bgName) bgs.add(p.bgName); [p.fast, p.c1, p.c2].forEach(m => m && moves.add(m)); });
+  document.getElementById('dlBg').innerHTML = [...bgs].sort().map(c => `<option value="${esc(c)}">`).join('');
   document.getElementById('dlCostume').innerHTML = [...cos].sort().map(c => `<option value="${esc(c)}">`).join('');
   document.getElementById('dlMoves').innerHTML = [...moves].sort().map(c => `<option value="${esc(c)}">`).join('');
   const reg = new Set(Object.keys(VIV_HINTS).map(k => k[0].toUpperCase() + k.slice(1)));
@@ -271,7 +274,7 @@ function ivStars(p){
 function renderMons(){
   let list = S.pokemon.slice();
   const q = F.q.trim().toLowerCase();
-  if (q) list = list.filter(p => [p.name, p.nick, p.form, p.costume, p.tags, p.location, p.notes, p.fast, p.c1, p.c2, '#' + p.dex].join(' ').toLowerCase().includes(q));
+  if (q) list = list.filter(p => [p.name, p.nick, p.form, p.costume, p.bgName, p.size, p.tags, p.location, p.notes, p.fast, p.c1, p.c2, '#' + p.dex].join(' ').toLowerCase().includes(q));
   const fl = F.flt;
   if (fl === 'shiny') list = list.filter(p => p.shiny);
   if (fl === 'costume') list = list.filter(p => p.costume);
@@ -281,6 +284,11 @@ function renderMons(){
   if (fl === 'hundo') list = list.filter(p => ivPct(p) === 100);
   if (fl === 'fav') list = list.filter(p => p.fav);
   if (fl === 'dyna') list = list.filter(p => p.dyna);
+  if (fl === 'bg') list = list.filter(p => p.bg);
+  if (fl === 'bgspecial') list = list.filter(p => p.bg === 'special');
+  if (fl === 'big') list = list.filter(p => p.size === 'XL' || p.size === 'XXL');
+  if (fl === 'small') list = list.filter(p => p.size === 'XS' || p.size === 'XXS');
+  if (['XXS','XS','XL','XXL'].includes(fl)) list = list.filter(p => p.size === fl);
   const so = {
     new: (a, b) => (b.added || '').localeCompare(a.added || ''),
     dex: (a, b) => (a.dex || 9999) - (b.dex || 9999) || (b.cp || 0) - (a.cp || 0),
@@ -297,11 +305,13 @@ function renderMons(){
       <div class="card"><b>${all.filter(p => p.shiny).length}</b><span class="muted">Shiny</span></div>
       <div class="card"><b>${all.filter(p => p.costume).length}</b><span class="muted">Kostüme</span></div>
       <div class="card"><b>${all.filter(p => ivPct(p) === 100).length}</b><span class="muted">100 %</span></div>
+      <div class="card"><b>${all.filter(p => p.bg).length}</b><span class="muted">Hintergründe</span></div>
+      <div class="card"><b>${all.filter(p => p.size === 'XXL' || p.size === 'XXS').length}</b><span class="muted">XXL/XXS</span></div>
     </div>
     <div class="bar">
       <button class="b p" id="addMon">+ Pokémon</button>
       <input id="q" placeholder="Suchen (Name, Kostüm, Tag, Attacke…)" value="${esc(F.q)}" style="flex:1;min-width:180px">
-      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="sort">${[['new', 'Neueste'], ['dex', 'Pokédex-Nr.'], ['cp', 'WP'], ['iv', 'IV'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${list.length ? `<div class="grid">${list.map(monCard).join('')}</div>` : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Pokémon eingetragen.'}</div>`}`;
@@ -321,6 +331,8 @@ function monCard(p){
   if (p.lucky) b.push('<span class="bd lu">Glücks</span>');
   if (p.dyna) b.push(`<span class="bd dy">${p.dyna === 'giga' ? 'Gigadynamax' : 'Dynamax'}</span>`);
   if (p.costume) b.push(`<span class="bd">🎩 ${esc(p.costume)}</span>`);
+  if (p.bg) b.push(`<span class="bd bg">🖼 ${p.bg === 'special' ? 'Spezial' : 'Ort'}${p.bgName ? ': ' + esc(p.bgName) : ''}</span>`);
+  if (p.size) b.push(`<span class="bd sz">${p.size}</span>`);
   if (p.viv) b.push(`<span class="bd">${vivDot(p.viv)}${esc(VIVMAP[p.viv]?.[1] || '')}</span>`);
   const sub = [p.form, p.gender === 'm' ? '♂' : p.gender === 'f' ? '♀' : ''].filter(Boolean).join(' · ');
   return `<div class="card mon" data-id="${p.id}">
@@ -367,6 +379,9 @@ function editMon(p){
       <label>Form<input name="form" value="${esc(p.form)}" placeholder="z. B. Alola, Galar, Hisui"></label>
       <label>Geschlecht<select name="gender">${o('', '–', p.gender || '')}${o('m', '♂ männlich', p.gender)}${o('f', '♀ weiblich', p.gender)}</select></label>
       <label>Typ<select name="align">${o('', 'Normal', p.align || '')}${o('shadow', 'Crypto', p.align)}${o('purified', 'Erlöst', p.align)}</select></label>
+      <label>Größe<select name="size">${o('', 'Normal', p.size || '')}${['XXS', 'XS', 'XL', 'XXL'].map(z => o(z, z, p.size)).join('')}</select></label>
+      <label>Hintergrund<select name="bg">${o('', 'Kein', p.bg || '')}${o('special', 'Spezial-Hintergrund', p.bg)}${o('location', 'Orts-Hintergrund', p.bg)}</select></label>
+      <label>Name des Hintergrunds<input name="bgName" list="dlBg" value="${esc(p.bgName)}" placeholder="z. B. GO Fest 2026"></label>
       <label>Dynamax<select name="dyna">${o('', '–', p.dyna || '')}${o('dmax', 'Dynamax', p.dyna)}${o('giga', 'Gigadynamax', p.dyna)}</select></label>
       <label id="vivWrap" style="display:none">Vivillon-Muster<select name="viv"><option value="">–</option>${VIV.map(v => o(v[0], v[1] + 'muster', p.viv)).join('')}</select></label>
       <label class="chk"><input type="checkbox" name="shiny" ${p.shiny ? 'checked' : ''}> ✨ Shiny</label>
@@ -389,7 +404,7 @@ function editMon(p){
         ivA: num(fd.get('ivA')), ivD: num(fd.get('ivD')), ivH: num(fd.get('ivH')),
         fast: fd.get('fast').trim(), c1: fd.get('c1').trim(), c2: fd.get('c2').trim(),
         costume: fd.get('costume').trim(), form: fd.get('form').trim(), gender: fd.get('gender'),
-        align: fd.get('align'), dyna: fd.get('dyna'), viv: [664, 665, 666].includes(num(fd.get('dex'))) ? fd.get('viv') : '',
+        align: fd.get('align'), dyna: fd.get('dyna'), size: fd.get('size'), bg: fd.get('bg'), bgName: fd.get('bg') ? fd.get('bgName').trim() : '', viv: [664, 665, 666].includes(num(fd.get('dex'))) ? fd.get('viv') : '',
         shiny: !!fd.get('shiny'), lucky: !!fd.get('lucky'), fav: !!fd.get('fav'),
         caught: fd.get('caught'), location: fd.get('location').trim(), tags: fd.get('tags').trim(), notes: fd.get('notes')
       });
