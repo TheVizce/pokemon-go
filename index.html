@@ -117,6 +117,7 @@ dialog::backdrop{background:rgba(10,15,30,.5)}
 const KEY = 'go-organizer-v1';
 const blank = () => ({ pokemon: [], friends: [], postcards: [], regionHints: {}, version: 1 });
 let S = load();
+if (S.pokemon.some(p => 'pvp' in p)){ S.pokemon.forEach(p => delete p.pvp); save(); }
 function load(){ try{ return Object.assign(blank(), JSON.parse(localStorage.getItem(KEY)) || {}); }catch(e){ return blank(); } }
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){ alert('Speichern fehlgeschlagen: ' + e.message); } }
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -245,7 +246,7 @@ function activity(f){
 
 /* ===================== Rendering ===================== */
 let TAB = 'mons';
-const F = { q: '', sort: 'new', flt: '' };
+const F = { q: '', sort: 'new', flt: '', lim: 120 };
 const FF = { q: '', sort: 'level' };
 document.getElementById('tabs').onclick = e => { const t = e.target.dataset.t; if (!t) return; TAB = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); render(); };
 function render(){
@@ -295,7 +296,7 @@ function renderMons(){
     cp: (a, b) => (b.cp || 0) - (a.cp || 0),
     iv: (a, b) => (ivPct(b) ?? -1) - (ivPct(a) ?? -1),
     name: (a, b) => (a.name || '').localeCompare(b.name || '', 'de')
-  }[F.sort];
+  }[F.sort] || ((a, b) => (b.added || '').localeCompare(a.added || ''));
   list.sort(so);
   const all = S.pokemon;
   main.innerHTML = `
@@ -310,16 +311,22 @@ function renderMons(){
     </div>
     <div class="bar">
       <button class="b p" id="addMon">+ Pokémon</button>
+      <button class="b" id="pgImp">Poke Genie importieren</button>
       <input id="q" placeholder="Suchen (Name, Kostüm, Tag, Attacke…)" value="${esc(F.q)}" style="flex:1;min-width:180px">
       <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="sort">${[['new', 'Neueste'], ['dex', 'Pokédex-Nr.'], ['cp', 'WP'], ['iv', 'IV'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
-    ${list.length ? `<div class="grid">${list.map(monCard).join('')}</div>` : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Pokémon eingetragen.'}</div>`}`;
+    ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid">${list.slice(0, F.lim).map(monCard).join('')}</div>
+      ${list.length > F.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="more">Weitere ${Math.min(120, list.length - F.lim)} anzeigen (${list.length - F.lim} übrig)</button> <button class="b" id="allm">Alle anzeigen</button></div>` : ''}`
+      : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Pokémon eingetragen – trag welche ein oder importiere deinen Poke-Genie-Export.'}</div>`}`;
   addMon.onclick = () => editMon();
+  pgImp.onclick = openPgImport;
+  const more = document.getElementById('more'); if (more) more.onclick = () => { F.lim += 120; renderMons(); };
+  const allm = document.getElementById('allm'); if (allm) allm.onclick = () => { F.lim = 1e6; renderMons(); };
   const qi = document.getElementById('q');
-  qi.oninput = e => { F.q = e.target.value; renderMons(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
-  flt.onchange = e => { F.flt = e.target.value; renderMons(); };
-  sort.onchange = e => { F.sort = e.target.value; renderMons(); };
+  qi.oninput = e => { F.q = e.target.value; F.lim = 120; renderMons(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+  flt.onchange = e => { F.flt = e.target.value; F.lim = 120; renderMons(); };
+  sort.onchange = e => { F.sort = e.target.value; F.lim = 120; renderMons(); };
   main.querySelectorAll('.mon').forEach(el => el.onclick = () => editMon(S.pokemon.find(p => p.id === el.dataset.id)));
 }
 function monCard(p){
@@ -391,8 +398,10 @@ function editMon(p){
     <div class="sec">Herkunft</div>
     <div class="fg">
       <label>Gefangen am<input name="caught" type="date" value="${p.caught || ''}"></label>
+      <label>Höhe (m)<input name="height" type="number" step="0.01" min="0" value="${p.height ?? ''}"></label>
+      <label>Gewicht (kg)<input name="weight" type="number" step="0.01" min="0" value="${p.weight ?? ''}"></label>
       <label>Ort<input name="location" value="${esc(p.location)}"></label>
-      <label>Tags<input name="tags" value="${esc(p.tags)}" placeholder="PvP, Raid, Tausch…"></label>
+      <label>Tags<input name="tags" value="${esc(p.tags)}" placeholder="Raid, Tausch, Behalten…"></label>
     </div>
     <label class="fl" style="margin-top:10px">Notizen<textarea name="notes">${esc(p.notes)}</textarea></label>`,
     isNew ? '' : `<button class="b d" value="del" formnovalidate style="margin-right:auto">Löschen</button>`,
@@ -406,7 +415,7 @@ function editMon(p){
         costume: fd.get('costume').trim(), form: fd.get('form').trim(), gender: fd.get('gender'),
         align: fd.get('align'), dyna: fd.get('dyna'), size: fd.get('size'), bg: fd.get('bg'), bgName: fd.get('bg') ? fd.get('bgName').trim() : '', viv: [664, 665, 666].includes(num(fd.get('dex'))) ? fd.get('viv') : '',
         shiny: !!fd.get('shiny'), lucky: !!fd.get('lucky'), fav: !!fd.get('fav'),
-        caught: fd.get('caught'), location: fd.get('location').trim(), tags: fd.get('tags').trim(), notes: fd.get('notes')
+        caught: fd.get('caught'), height: num(fd.get('height')), weight: num(fd.get('weight')), location: fd.get('location').trim(), tags: fd.get('tags').trim(), notes: fd.get('notes')
       });
       if (isNew) S.pokemon.push(p); save(); render();
     });
@@ -645,11 +654,15 @@ function renderData(){
         <button class="b p" id="exp">Exportieren (JSON)</button>
         <label class="b" style="cursor:pointer">Importieren…<input type="file" id="imp" accept=".json,application/json" hidden></label>
       </div>
+      <h3>Poke Genie</h3>
+      <p class="note">CSV-Export aus Poke Genie einlesen. Erneute Importe aktualisieren bestehende Einträge, ohne deine eigenen Angaben zu überschreiben.</p>
+      <button class="b" id="pgImp2">Poke Genie importieren</button>
       <h3>Statistik</h3>
       <p>${S.pokemon.length} Pokémon · ${S.friends.length} Freunde · ${S.postcards.length} Postkarten</p>
       <h3 style="color:var(--bad)">Zurücksetzen</h3>
       <button class="b d" id="wipe">Alle Daten löschen</button>
     </div>`;
+  pgImp2.onclick = openPgImport;
   exp.onclick = () => {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }));
@@ -665,6 +678,116 @@ function renderData(){
     }catch(err){ alert('Import fehlgeschlagen: ' + err.message); }
   };
   wipe.onclick = () => { if (confirm('Wirklich ALLE Daten löschen?') && confirm('Sicher? Das kann nicht rückgängig gemacht werden.')){ S = blank(); save(); render(); } };
+}
+
+
+/* ===================== Poke-Genie-Import ===================== */
+function parseCSVText(text){
+  text = text.replace(/^﻿/, '');
+  const firstLine = text.slice(0, text.indexOf('\n') + 1 || undefined);
+  const delim = (firstLine.match(/;/g) || []).length > (firstLine.match(/,/g) || []).length ? ';' : ',';
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){ if (c === '"'){ if (text[i + 1] === '"'){ cur += '"'; i++; } else q = false; } else cur += c; continue; }
+    if (c === '"') q = true;
+    else if (c === delim){ row.push(cur); cur = ''; }
+    else if (c === '\n'){ row.push(cur); rows.push(row); row = []; cur = ''; }
+    else if (c !== '\r') cur += c;
+  }
+  if (cur || row.length){ row.push(cur); rows.push(row); }
+  const head = rows.shift().map(h => h.trim());
+  return rows.filter(r => r.some(v => v.trim())).map(r => Object.fromEntries(head.map((h, i) => [h, (r[i] ?? '').trim()])));
+}
+// Spaltennamen der deutschen und englischen Poke-Genie-Exporte
+const PG = {
+  name: ['Name'], form: ['Form'], dex: ['Pokemon-Nummer', 'Pokemon Number'], gender: ['Geschlecht', 'Gender'],
+  cp: ['WP', 'CP'], hp: ['KP', 'HP'], a: ['Angr. IV', 'Atk IV'], d: ['Ver. IV', 'Def IV'], h: ['Ausd. IV', 'Sta IV'],
+  lmin: ['Min-Level', 'Level Min'], lmax: ['Max-Level', 'Level Max'],
+  fast: ['Schnell-Angriff', 'Quick Move'], c1: ['Auflade-Angriff', 'Charge Move'], c2: ['Auflade-Angriff 2', 'Charge Move 2'],
+  scan: ['Scandatum', 'Scan Date'], orig: ['Ursprüngliches Scan-Datum', 'Original Scan Date'], caught: ['Datum Gefangen', 'Catch Date'],
+  weight: ['Gewicht', 'Weight'], height: ['Größe', 'Height'], lucky: ['Glücks', 'Lucky'], align: ['Crypto/Erlöstes', 'Shadow/Purified'],
+  fav: ['Favorit', 'Favorite'],
+};
+const pgGet = (row, k) => { for (const c of PG[k]) if (c in row) return row[c]; return ''; };
+function pgDate(v){
+  if (!v) return '';
+  let m = v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = v.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[0];
+  m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  return '';
+}
+const pgNum = v => { const n = parseFloat(String(v).replace(',', '.')); return isNaN(n) ? null : n; };
+function pgRow(r){
+  const dex = num(pgGet(r, 'dex'));
+  const form = pgGet(r, 'form');
+  const g = pgGet(r, 'gender');
+  const al = pgGet(r, 'align');
+  const lmin = pgNum(pgGet(r, 'lmin')), lmax = pgNum(pgGet(r, 'lmax'));
+  const orig = pgGet(r, 'orig') || pgGet(r, 'scan');
+  const ivA = num(pgGet(r, 'a')), ivD = num(pgGet(r, 'd')), ivH = num(pgGet(r, 'h'));
+  return {
+    pgKey: [orig, ivA, ivD, ivH, g].join('|'),
+    name: (dex && DEX[dex]?.de) || pgGet(r, 'name'), dex,
+    form: /^normal$/i.test(form) ? '' : form,
+    gender: g === '♂' ? 'm' : g === '♀' ? 'f' : '',
+    cp: num(pgGet(r, 'cp')), hp: num(pgGet(r, 'hp')), ivA, ivD, ivH,
+    level: lmin != null && lmax != null && lmin !== lmax ? lmin : (lmin ?? lmax),
+    fast: pgGet(r, 'fast'), c1: pgGet(r, 'c1'), c2: pgGet(r, 'c2'),
+    caught: pgDate(pgGet(r, 'caught')),
+    weight: pgNum(pgGet(r, 'weight')), height: pgNum(pgGet(r, 'height')),
+    lucky: pgGet(r, 'lucky') === '1',
+    align: al === '1' ? 'shadow' : al === '2' ? 'purified' : '',
+    pgFav: pgGet(r, 'fav') === '1',
+    added: orig ? orig.replace(' ', 'T') : new Date().toISOString(),
+    src: 'pokegenie'
+  };
+}
+function importPokeGenie(text, removeMissing){
+  const rows = parseCSVText(text);
+  if (!rows.length || !('Pokemon-Nummer' in rows[0] || 'Pokemon Number' in rows[0])) throw new Error('Das sieht nicht nach einem Poke-Genie-Export aus.');
+  const pool = {};
+  S.pokemon.forEach(p => { if (p.pgKey) (pool[p.pgKey] ||= []).push(p); });
+  const seen = new Set(); let added = 0, updated = 0, removed = 0;
+  // Werte aus Poke Genie werden überschrieben, eigene Felder (Shiny, Kostüm, Hintergrund, Größe, Notizen …) bleiben
+  for (const r of rows){
+    const n = pgRow(r);
+    const cands = (pool[n.pgKey] || []).filter(p => !seen.has(p.id));
+    let m = null;
+    if (cands.length) m = cands.sort((a, b) => ((a.dex === n.dex ? 0 : 1) - (b.dex === n.dex ? 0 : 1)) || Math.abs((a.cp || 0) - n.cp) - Math.abs((b.cp || 0) - n.cp))[0];
+    if (m){
+      const { added: _a, pgFav, ...upd } = n;
+      if (!m.caught && !upd.caught) delete upd.caught;
+      Object.assign(m, upd); seen.add(m.id); updated++;
+    } else {
+      const { pgFav, ...rest } = n;
+      const p = { id: uid(), ...rest, fav: pgFav };
+      S.pokemon.push(p); seen.add(p.id); added++;
+    }
+  }
+  if (removeMissing){
+    const before = S.pokemon.length;
+    S.pokemon = S.pokemon.filter(p => p.src !== 'pokegenie' || seen.has(p.id));
+    removed = before - S.pokemon.length;
+  }
+  save();
+  return { total: rows.length, added, updated, removed };
+}
+function openPgImport(){
+  openDlg('Poke-Genie-Export importieren', `
+    <p>In Poke Genie: <b>Einstellungen → Exportieren</b> (CSV) und die Datei hier auswählen.</p>
+    <label class="fl">CSV-Datei<input type="file" name="file" accept=".csv,text/csv" required></label>
+    <label class="chk" style="margin-top:12px"><input type="checkbox" name="rm"> Importierte Pokémon entfernen, die nicht mehr im Export sind (z. B. verschickt oder getauscht)</label>
+    <p class="note">Bei einem erneuten Import werden bereits importierte Pokémon wiedererkannt und aktualisiert (WP, Level, Attacken, Entwicklung …). Was du selbst einträgst – Shiny, Kostüm, Hintergrund, Größenklasse, Vivillon-Muster, Spitzname, Tags, Notizen – bleibt erhalten, denn das exportiert Poke Genie nicht.</p>
+    <p class="note">Tipp: Vorher unter „Daten“ eine Sicherung exportieren.</p>`, '',
+    async fd => {
+      const f = fd.get('file'); if (!f || !f.size) return;
+      try{
+        const res = importPokeGenie(await f.text(), !!fd.get('rm'));
+        render();
+        alert(`${res.total} Pokémon gelesen:\n• ${res.added} neu\n• ${res.updated} aktualisiert${res.removed ? `\n• ${res.removed} entfernt` : ''}`);
+      }catch(err){ alert('Import fehlgeschlagen: ' + err.message); }
+    });
 }
 
 /* ===================== Dialog-Helfer ===================== */
