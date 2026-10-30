@@ -51,7 +51,7 @@ button.d{color:var(--bad)}
 .bd{font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px;background:var(--acc2);color:var(--acc)}
 .bd.sh{background:#fff3c4;color:#8a6500}.bd.cr{background:#ece3ff;color:#5b2fb5}.bd.lu{background:#fff0c2;color:#9a6c00}
 .bd.er{background:#e2f6ff;color:#0b6c91}.bd.dy{background:#ffe2ea;color:#b0244b}
-.bd.bg{background:#e3f7e9;color:#1b7a43}.bd.sz{background:#f0e6da;color:#7a4b1b}
+.bd.bg{background:#e3f7e9;color:#1b7a43}.bd.mv{background:#fde4cf;color:#a3470d}.bd.sz{background:#f0e6da;color:#7a4b1b}
 .ivrow{display:flex;justify-content:space-between;font-size:13px;margin-top:6px;color:var(--muted)}
 .ivp{font-weight:800;color:var(--ink)}
 .stars{color:var(--gold);letter-spacing:1px}
@@ -394,6 +394,7 @@ function renderMons(){
   if (fl === 'hundo') list = list.filter(p => ivPct(p) === 100);
   if (fl === 'fav') list = list.filter(p => p.fav);
   if (fl === 'dyna') list = list.filter(p => p.dyna);
+  if (fl === 'move') list = list.filter(p => p.specialMove);
   if (fl === 'bg') list = list.filter(p => p.bg);
   if (fl === 'bgspecial') list = list.filter(p => p.bg === 'special');
   if (fl === 'big') list = list.filter(p => p.size === 'XL' || p.size === 'XXL');
@@ -422,7 +423,7 @@ function renderMons(){
       <button class="b p" id="addMon">+ Pokémon</button>
       <button class="b" id="pgImp">Poke Genie importieren</button>
       <input id="q" placeholder="Suchen (Name, Kostüm, Tag, Attacke…)" value="${esc(F.q)}" style="flex:1;min-width:180px">
-      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="sort">${[['new', 'Neueste'], ['dex', 'Pokédex-Nr.'], ['cp', 'WP'], ['iv', 'IV'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid">${list.slice(0, F.lim).map(monCard).join('')}</div>
@@ -446,6 +447,7 @@ function monCard(p){
   if (p.align === 'purified') b.push('<span class="bd er">Erlöst</span>');
   if (p.lucky) b.push('<span class="bd lu">Glücks</span>');
   if (p.dyna) b.push(`<span class="bd dy">${p.dyna === 'giga' ? 'Gigadynamax' : 'Dynamax'}</span>`);
+  if (p.specialMove) b.push(`<span class="bd mv">⚡ Spezialattacke</span>`);
   if (p.costume) b.push(`<span class="bd">🎩 ${esc(p.costume)}</span>`);
   if (p.bg) b.push(`<span class="bd bg">🖼 ${p.bg === 'special' ? 'Spezial' : 'Ort'}${p.bgName ? ': ' + esc(p.bgName) : ''}</span>`);
   if (p.size) b.push(`<span class="bd sz">${p.size}</span>`);
@@ -488,6 +490,7 @@ function editMon(p){
       <label>Sofortattacke<input name="fast" list="dlMoves" value="${esc(p.fast)}"></label>
       <label>Ladeattacke 1<input name="c1" list="dlMoves" value="${esc(p.c1)}"></label>
       <label>Ladeattacke 2<input name="c2" list="dlMoves" value="${esc(p.c2)}"></label>
+      <label class="chk" style="grid-column:1/-1"><input type="checkbox" name="specialMove" ${p.specialMove ? 'checked' : ''}> ⚡ Hat Spezialattacke (Community Day, Event, Elite-TM …)</label>
     </div>
     <div class="sec">Aussehen & Besonderheiten</div>
     <div class="fg">
@@ -523,7 +526,7 @@ function editMon(p){
         fast: fd.get('fast').trim(), c1: fd.get('c1').trim(), c2: fd.get('c2').trim(),
         costume: fd.get('costume').trim(), form: fd.get('form').trim(), gender: fd.get('gender'),
         align: fd.get('align'), dyna: fd.get('dyna'), size: fd.get('size'), bg: fd.get('bg'), bgName: fd.get('bg') ? fd.get('bgName').trim() : '', viv: [664, 665, 666].includes(num(fd.get('dex'))) ? fd.get('viv') : '',
-        shiny: !!fd.get('shiny'), lucky: !!fd.get('lucky'), fav: !!fd.get('fav'),
+        shiny: !!fd.get('shiny'), specialMove: !!fd.get('specialMove'), lucky: !!fd.get('lucky'), fav: !!fd.get('fav'),
         caught: fd.get('caught'), height: num(fd.get('height')), weight: num(fd.get('weight')), location: fd.get('location').trim(), tags: fd.get('tags').trim(), notes: fd.get('notes')
       });
       if (isNew) S.pokemon.push(p); save(); render();
@@ -884,7 +887,7 @@ function openPgImport(){
     <p>In Poke Genie: <b>Einstellungen → Exportieren</b> (CSV) und die Datei hier auswählen.</p>
     <label class="fl">CSV-Datei<input type="file" name="file" accept=".csv,text/csv" required></label>
     <label class="chk" style="margin-top:12px"><input type="checkbox" name="rm"> Importierte Pokémon entfernen, die nicht mehr im Export sind (z. B. verschickt oder getauscht)</label>
-    <p class="note">Bei einem erneuten Import werden bereits importierte Pokémon wiedererkannt und aktualisiert (WP, Level, Attacken, Entwicklung …). Was du selbst einträgst – Shiny, Kostüm, Hintergrund, Größenklasse, Vivillon-Muster, Spitzname, Tags, Notizen – bleibt erhalten, denn das exportiert Poke Genie nicht.</p>
+    <p class="note">Bei einem erneuten Import werden bereits importierte Pokémon wiedererkannt und aktualisiert (WP, Level, Attacken, Entwicklung …). Was du selbst einträgst – Shiny, Spezialattacke, Kostüm, Hintergrund, Größenklasse, Vivillon-Muster, Spitzname, Tags, Notizen – bleibt erhalten, denn das exportiert Poke Genie nicht.</p>
     <p class="note">Tipp: Vorher unter „Daten“ eine Sicherung exportieren.</p>`, '',
     async fd => {
       const f = fd.get('file'); if (!f || !f.size) return;
