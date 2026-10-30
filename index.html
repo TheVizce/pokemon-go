@@ -222,6 +222,7 @@ async function initStore(){
   }
   try{ for (const k of ['go-organizer-dex', 'go-organizer-dex-v2']) localStorage.removeItem(k); }catch(e){}
   if (S.pokemon.some(p => 'pvp' in p)){ S.pokemon.forEach(p => delete p.pvp); save(); }
+  if (migrateFriends()) save();
   try{ if (navigator.storage?.persist) PERSISTED = (await navigator.storage.persisted()) || (await navigator.storage.persist()); }catch(e){}
 }
 function exportJSON(){
@@ -311,8 +312,14 @@ const VIV_HINTS = {
   'indonesien':['jungle'], 'malaysia':['jungle'], 'thailand':['monsoon','jungle'], 'russland':['tundra','continental','polar'],
   'chile':['ocean','marine'], 'argentinien':['marine','savanna']
 };
+const FLAG_COUNTRY = { '🇩🇪': 'deutschland', '🇦🇹': 'österreich', '🇨🇭': 'schweiz', '🇫🇷': 'frankreich', '🇵🇹': 'portugal', '🇪🇸': 'spanien', '🇮🇹': 'italien', '🇬🇧': 'großbritannien', '🇯🇵': 'japan', '🇦🇺': 'australien', '🇳🇿': 'neuseeland', '🇧🇷': 'brasilien', '🇮🇳': 'indien', '🇲🇽': 'mexiko', '🇺🇸': 'usa', '🇨🇦': 'kanada', '🇮🇩': 'indonesien', '🇦🇷': 'argentinien' };
 function vivSuggest(region){
-  const r = (region || '').trim().toLowerCase(); if (!r) return [];
+  let r = (region || '').trim().toLowerCase(); if (!r) return [];
+  const flag = Object.keys(FLAG_COUNTRY).find(k => r.startsWith(k));
+  r = r.replace(/^(?:[\u{1F1E6}-\u{1F1FF}]{2}|\u{1F3F4}[\u{E0061}-\u{E007A}]+\u{E007F})\s*/u, '').trim();
+  if (!r && flag) r = FLAG_COUNTRY[flag];
+  if (!r) return [];
+  if (flag && !S.regionHints[r] && !VIV_HINTS[r] && VIV_HINTS[FLAG_COUNTRY[flag]] && !Object.keys(S.regionHints).some(k => r.includes(k) || k.includes(r))) return VIV_HINTS[FLAG_COUNTRY[flag]];
   if (S.regionHints[r]) return [S.regionHints[r]];
   if (VIV_HINTS[r]) return VIV_HINTS[r];
   for (const k of Object.keys(S.regionHints)) if (r.includes(k) || k.includes(r)) return [S.regionHints[k]];
@@ -323,40 +330,75 @@ function vivSuggest(region){
 function vivEncounters(n){ if (n < 3) return [0, 3]; if (n < 12) return [1, 12]; const k = Math.floor((n - 12) / 15); return [2 + k, 12 + 15 * (k + 1)]; }
 
 /* ===================== Freundschaft ===================== */
-const FL = ['Freund', 'Gute Freunde', 'Super Freunde', 'Ultra Freunde', 'Beste Freunde'];
-const FT = [0, 1, 7, 30, 90]; // Tage Interaktion für das jeweilige Level
-const levelFromDays = d => FT.reduce((l, t, i) => d >= t ? i : l, 0);
+// Level 0–5. FT = Tage/Punkte ab Freundschaftsbeginn, ab denen das Level erreicht ist.
+// Bester Freund → Allerbester Freund: 90 Freundschaftspunkte (1/Tag + Bonus aus Wochenaufgaben).
+const FL = ['Freund', 'Guter Freund', 'Superfreund', 'Hyperfreund', 'Bester Freund', 'Allerbester Freund'];
+const FT = [0, 1, 7, 30, 90, 180];
+const MAXLVL = FL.length - 1;
+const spanOf = lvl => lvl >= MAXLVL ? null : FT[lvl + 1] - FT[lvl];
+const unitOf = (lvl, n) => lvl === 4 ? (n === 1 ? 'Punkt' : 'Punkte') : (n === 1 ? 'Tag' : 'Tage');
+const CHECK_DUE = 14;   // Tage, nach denen eine erneute Prüfung fällig ist
+
 function friendProgress(f){
   const lvl = f.level || 0;
-  if (lvl >= 4) return { pct: 100, left: 0, next: null };
-  const from = FT[lvl], to = FT[lvl + 1];
-  const done = Math.max(0, (f.days || 0) - from);
-  return { pct: Math.min(100, done / (to - from) * 100), left: Math.max(0, to - (f.days || 0)), next: FL[lvl + 1] };
+  const span = spanOf(lvl);
+  if (span == null) return { pct: 100, left: null, next: null };
+  const left = Math.max(0, Math.min(span, f.left ?? span));
+  return { pct: (span - left) / span * 100, left, next: FL[lvl + 1], unit: unitOf(lvl, left) };
 }
+// Prüfstatus: wie lange hatte sich zum Zeitpunkt der letzten Prüfung nichts mehr geändert?
 function activity(f){
-  const sn = (f.snaps || []).slice().sort((a, b) => a.date.localeCompare(b.date));
-  if (!sn.length) return { cls: 'uk', txt: 'Keine Daten', detail: '' };
-  const last = sn[sn.length - 1];
-  const age = daysBetween(last.date, today());
-  if (sn.length < 2) return { cls: 'uk', txt: 'Erst 1 Eintrag', detail: `Lv ${last.lvl ?? '?'} · ${nf(last.xp)} EP`, last, age };
-  // Vergleich mit dem ältesten Eintrag der letzten ~30 Tage (mind. der vorletzte)
-  let ref = sn[sn.length - 2];
-  for (let i = sn.length - 2; i >= 0; i--){ if (daysBetween(sn[i].date, last.date) <= 30) ref = sn[i]; else break; }
-  const dd = Math.max(1, daysBetween(ref.date, last.date));
-  const gain = (last.xp ?? 0) - (ref.xp ?? 0);
-  const perDay = Math.round(gain / dd);
-  let cls = 'ok', txt = 'Aktiv';
-  if (gain <= 0) { cls = 'no'; txt = 'Inaktiv'; }
-  else if (perDay < 2000) { cls = 'lo'; txt = 'Wenig aktiv'; }
-  let detail = `+${nf(gain)} EP in ${dd} T (≈ ${nf(perDay)}/Tag)`;
-  if (age > 21) detail += ` · letzter Eintrag vor ${age} T`;
-  return { cls, txt, detail, last, age, perDay };
+  const c = f.lastCheck;
+  if (!c) return { cls: 'uk', txt: 'Nie geprüft', detail: '', due: true, checkAge: null, stale: null };
+  const checkAge = daysBetween(c, today());
+  const lastChange = [f.xpChanged, f.friendChanged].filter(Boolean).sort().pop();
+  const stale = lastChange ? Math.max(0, daysBetween(lastChange, c)) : null;
+  let cls = 'uk', txt = 'Unklar';
+  if (stale != null){
+    if (stale < 7){ cls = 'ok'; txt = 'Aktiv'; }
+    else if (stale < 21){ cls = 'lo'; txt = 'Ruhig'; }
+    else { cls = 'no'; txt = 'Inaktiv?'; }
+  }
+  const detail = stale == null ? '' : stale === 0 ? 'Änderung am Prüftag' : `${stale} T ohne Änderung bis zur Prüfung`;
+  return { cls, txt, detail, due: checkAge >= CHECK_DUE, checkAge, stale };
+}
+// Alte Freunde (Version mit f.days) auf Resttage umstellen
+function migrateFriends(){
+  let ch = false;
+  for (const f of S.friends){
+    if (f.left === undefined && f.days !== undefined){
+      const lvl = Math.min(f.level || 0, MAXLVL);
+      f.left = spanOf(lvl) == null ? null : Math.max(0, FT[lvl + 1] - (f.days || 0));
+      f.leftDate = f.last || today();
+      delete f.days; ch = true;
+    }
+  }
+  return ch;
+}
+// „Heute interagiert“: Resttage um 1 senken, bei 0 ins nächste Level
+function interact(f, undo){
+  const lvl = f.level || 0;
+  if (undo){
+    const span = spanOf(lvl);
+    if (f.prevState){ Object.assign(f, f.prevState); delete f.prevState; }
+    else if (span != null) f.left = Math.min(span, (f.left ?? span) + 1);
+    f.last = f.prevLast || '';
+    return;
+  }
+  f.prevState = { level: f.level, left: f.left, leftDate: f.leftDate };
+  f.prevLast = f.last;
+  const span = spanOf(lvl);
+  if (span != null){
+    f.left = (f.left ?? span) - 1;
+    if (f.left <= 0 && lvl < MAXLVL){ f.level = lvl + 1; f.left = spanOf(lvl + 1); }
+  }
+  f.leftDate = today(); f.last = today();
 }
 
 /* ===================== Rendering ===================== */
 let TAB = 'mons';
 const F = { q: '', sort: 'new', flt: '', lim: 120 };
-const FF = { q: '', sort: 'level' };
+const FF = { q: '', sort: 'level', flt: '', lim: 60 };
 document.getElementById('tabs').onclick = e => { const t = e.target.dataset.t; if (!t) return; TAB = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); render(); };
 function render(){
   refreshLists();
@@ -548,73 +590,91 @@ function renderFriends(){
   let list = S.friends.slice();
   const q = FF.q.trim().toLowerCase();
   if (q) list = list.filter(f => [f.name, f.code, f.notes, f.region].join(' ').toLowerCase().includes(q));
+  const fl = FF.flt;
+  if (fl === 'due') list = list.filter(f => activity(f).due);
+  if (fl === 'inactive') list = list.filter(f => activity(f).cls === 'no');
+  if (fl === 'quiet') list = list.filter(f => ['no', 'lo'].includes(activity(f).cls));
+  if (fl === 'lucky') list = list.filter(f => f.lucky);
+  if (fl === 'today') list = list.filter(f => f.last !== today());
+  if (/^L\d$/.test(fl)) list = list.filter(f => (f.level || 0) === +fl[1]);
+  const A = new Map(list.map(f => [f.id, activity(f)]));
   const so = {
-    level: (a, b) => (b.level || 0) - (a.level || 0) || friendProgress(a).left - friendProgress(b).left,
-    next: (a, b) => (friendProgress(a).left || 999) - (friendProgress(b).left || 999),
-    name: (a, b) => a.name.localeCompare(b.name, 'de'),
-    act: (a, b) => (activity(a).perDay ?? -1) - (activity(b).perDay ?? -1)
-  }[FF.sort];
-  list.sort(so);
-  const t = today();
-  const doneToday = S.friends.filter(f => f.last === t).length;
+    level: (a, b) => (b.level || 0) - (a.level || 0) || (friendProgress(a).left ?? 999) - (friendProgress(b).left ?? 999),
+    next: (a, b) => (friendProgress(a).left ?? 999) - (friendProgress(b).left ?? 999),
+    check: (a, b) => (a.lastCheck || '').localeCompare(b.lastCheck || ''),
+    stale: (a, b) => (A.get(b.id).stale ?? -1) - (A.get(a.id).stale ?? -1),
+    name: (a, b) => a.name.localeCompare(b.name, 'de')
+  }[FF.sort] || ((a, b) => a.name.localeCompare(b.name, 'de'));
+  list.sort((a, b) => so(a, b) || a.name.localeCompare(b.name, 'de'));
+  const t = today(), all = S.friends;
+  const cnt = fn => all.filter(fn).length;
   main.innerHTML = `
     <div class="stat">
-      <div class="card"><b>${S.friends.length}</b><span class="muted">Freunde</span></div>
-      ${FL.slice(1).map((l, i) => `<div class="card"><b>${S.friends.filter(f => (f.level || 0) === i + 1).length}</b><span class="muted">${l}</span></div>`).join('')}
-      <div class="card"><b>${doneToday}</b><span class="muted">heute interagiert</span></div>
-      <div class="card"><b>${S.friends.filter(f => activity(f).cls === 'no').length}</b><span class="muted">inaktiv</span></div>
+      <div class="card"><b>${all.length}</b><span class="muted">Freunde</span></div>
+      ${FL.map((l, i) => `<div class="card"><b>${cnt(f => (f.level || 0) === i)}</b><span class="muted">${l}</span></div>`).join('')}
+      <div class="card"><b>${cnt(f => activity(f).due)}</b><span class="muted">Prüfung fällig</span></div>
+      <div class="card"><b>${cnt(f => activity(f).cls === 'no')}</b><span class="muted">inaktiv?</span></div>
+      <div class="card"><b>${cnt(f => f.last === t)}</b><span class="muted">heute interagiert</span></div>
     </div>
     <div class="bar">
       <button class="b p" id="addF">+ Freund</button>
-      <input id="fq" placeholder="Suchen…" value="${esc(FF.q)}" style="flex:1;min-width:160px">
-      <select id="fs">${[['level', 'Freundschaftslevel'], ['next', 'Nächstes Level bald'], ['act', 'Inaktivste zuerst'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <button class="b" id="impF">Freunde importieren</button>
+      <input id="fq" placeholder="Suchen (Name, Region, Code…)" value="${esc(FF.q)}" style="flex:1;min-width:160px">
+      <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['today', 'Heute noch nicht interagiert'], ['lucky', 'Glücksfreunde'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Am längsten nicht geprüft'], ['stale', 'Am längsten ohne Änderung'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
-    ${list.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(280px,1fr))">${list.map(friendCard).join('')}</div>` : `<div class="empty">${S.friends.length ? 'Nichts gefunden.' : 'Noch keine Freunde eingetragen.'}</div>`}`;
+    ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map(f => friendCard(f, A.get(f.id))).join('')}</div>
+      ${list.length > FF.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="moreF">Weitere ${Math.min(60, list.length - FF.lim)} anzeigen (${list.length - FF.lim} übrig)</button> <button class="b" id="allF">Alle anzeigen</button></div>` : ''}`
+      : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Freunde eingetragen – trag welche ein oder importiere sie.'}</div>`}`;
   addF.onclick = () => editFriend();
-  fq.oninput = e => { FF.q = e.target.value; renderFriends(); const n = document.getElementById('fq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
-  fs.onchange = e => { FF.sort = e.target.value; renderFriends(); };
+  impF.onclick = openFriendImport;
+  const mf = document.getElementById('moreF'); if (mf) mf.onclick = () => { FF.lim += 60; renderFriends(); };
+  const af = document.getElementById('allF'); if (af) af.onclick = () => { FF.lim = 1e6; renderFriends(); };
+  fq.oninput = e => { FF.q = e.target.value; FF.lim = 60; renderFriends(); const n = document.getElementById('fq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+  ff.onchange = e => { FF.flt = e.target.value; FF.lim = 60; renderFriends(); };
+  fs.onchange = e => { FF.sort = e.target.value; FF.lim = 60; renderFriends(); };
   main.querySelectorAll('[data-act]').forEach(b => b.onclick = e => {
     e.stopPropagation();
     const f = S.friends.find(x => x.id === b.dataset.id);
     const a = b.dataset.act;
     if (a === 'edit') return editFriend(f);
-    if (a === 'xp') return addSnap(f);
+    if (a === 'check') return checkFriend(f);
     if (a === 'card') return editCard(null, f.id);
-    if (a === 'inter'){
-      if (f.last === today()){ f.days = Math.max(0, (f.days || 0) - 1); f.last = f.prevLast || ''; }
-      else { f.prevLast = f.last; f.days = (f.days || 0) + 1; f.last = today(); }
-      f.level = Math.max(f.level || 0, levelFromDays(f.days)); save(); renderFriends();
-    }
+    if (a === 'inter'){ interact(f, f.last === today()); save(); renderFriends(); }
     if (a === 'gift'){ f.giftSent = f.giftSent === today() ? '' : today(); save(); renderFriends(); }
   });
 }
-function friendCard(f){
-  const pr = friendProgress(f), ac = activity(f), t = today();
+function friendCard(f, ac){
+  ac = ac || activity(f);
+  const pr = friendProgress(f), t = today(), lvl = f.level || 0;
   const cards = S.postcards.filter(c => c.friendId === f.id);
   const pats = [...new Set(cards.map(c => c.viv).filter(Boolean))];
-  const hearts = '♥'.repeat(f.level || 0) + '♡'.repeat(4 - (f.level || 0));
+  const hearts = '♥'.repeat(lvl) + '♡'.repeat(MAXLVL - lvl);
   const eta = pr.left ? new Date(Date.now() + (pr.left - (f.last === t ? 0 : 1)) * 864e5).toLocaleDateString('de-DE') : '';
+  const trainer = [f.trainerLvl ? `Lv ${f.trainerLvl}` : '', f.xp != null ? `${nf(f.xp)} EP` : ''].filter(Boolean).join(' · ');
+  const short = d => d ? new Date(d + 'T12:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '–';
   return `<div class="card fr">
-    <div class="row"><h3 class="sp">${esc(f.name)} ${f.lucky ? '<span class="bd lu">Glücks-Freund</span>' : ''}</h3><button class="b s" data-act="edit" data-id="${f.id}">✎</button></div>
-    <div class="muted" style="font-size:13px">${f.code ? esc(f.code) + ' · ' : ''}${esc(f.region || 'Herkunft unbekannt')}</div>
-    <div class="row" style="margin-top:8px"><span class="hearts" style="color:#e2557a">${hearts}</span><b class="sp">${FL[f.level || 0]}</b><span class="muted" style="font-size:13px">${f.days || 0} Tage</span></div>
+    <div class="row"><h3 class="sp">${esc(f.name)} ${f.lucky ? '<span class="bd lu">Glücksfreund</span>' : ''}</h3><button class="b s" data-act="edit" data-id="${f.id}" title="Bearbeiten">✎</button></div>
+    <div class="muted" style="font-size:13px">${[esc(f.region || 'Herkunft unbekannt'), trainer, f.code ? esc(f.code) : ''].filter(Boolean).join(' · ')}</div>
+    <div class="row" style="margin-top:8px"><span class="hearts" style="color:#e2557a">${hearts}</span><b class="sp">${FL[lvl]}</b></div>
     <div class="prog"><i style="width:${pr.pct}%"></i></div>
-    <div class="note">${pr.next ? `Noch <b>${pr.left}</b> Tag${pr.left === 1 ? '' : 'e'} bis <b>${pr.next}</b>${eta ? ` · frühestens ${eta}` : ''}` : 'Maximales Level erreicht 🎉'}</div>
+    <div class="note">${pr.next ? `Noch <b>${pr.left}</b> ${pr.unit} bis <b>${pr.next}</b>${eta ? ` · frühestens ${eta}` : ''}` : `Höchstes Level erreicht 🎉${f.left != null ? ` · Zähler laut Spiel: ${f.left}` : ''}`}</div>
     <div class="row" style="margin-top:10px">
-      <span class="st ${ac.cls}">${ac.txt}</span><span class="note sp">${ac.detail}</span>
+      <span class="st ${ac.cls}">${ac.txt}</span>${ac.due ? '<span class="st lo">Prüfung fällig</span>' : ''}<span class="note sp">${ac.detail}</span>
     </div>
-    ${pats.length ? `<div class="note" style="margin-top:6px">Vivillon: ${pats.map(k => vivDot(k) + esc(VIVMAP[k]?.[1])).join(', ')}</div>` : ''}
-    <div class="note" style="margin-top:4px">${cards.length} Postkarte${cards.length === 1 ? '' : 'n'}</div>
+    <div class="note" style="margin-top:4px">Geprüft ${short(f.lastCheck)}${ac.checkAge != null ? ` (vor ${ac.checkAge} T)` : ''} · EP geändert ${short(f.xpChanged)} · Freundschaft geändert ${short(f.friendChanged)}</div>
+    ${pats.length ? `<div class="note" style="margin-top:4px">Vivillon: ${pats.map(k => vivDot(k) + esc(VIVMAP[k]?.[1])).join(', ')}</div>` : ''}
+    ${cards.length ? `<div class="note" style="margin-top:2px">${cards.length} Postkarte${cards.length === 1 ? '' : 'n'}</div>` : ''}
     <div class="row" style="margin-top:10px">
       <button class="b s ${f.last === t ? 'p' : ''}" data-act="inter" data-id="${f.id}">${f.last === t ? '✓ Heute interagiert' : 'Heute interagiert'}</button>
       <button class="b s ${f.giftSent === t ? 'p' : ''}" data-act="gift" data-id="${f.id}">🎁 ${f.giftSent === t ? 'Gesendet' : 'Geschenk'}</button>
-      <button class="b s" data-act="xp" data-id="${f.id}">EP eintragen</button>
+      <button class="b s ${ac.due ? 'p' : ''}" data-act="check" data-id="${f.id}">Prüfen</button>
       <button class="b s" data-act="card" data-id="${f.id}">+ Postkarte</button>
     </div>
   </div>`;
 }
 function editFriend(f){
-  const isNew = !f; f = f || { id: uid(), level: 0, days: 0, snaps: [], since: today() };
+  const isNew = !f; f = f || { id: uid(), level: 0, left: 1, leftDate: today(), snaps: [], since: today() };
   const pr = friendProgress(f);
   const snaps = (f.snaps || []).slice().sort((a, b) => b.date.localeCompare(a.date));
   openDlg(isNew ? 'Freund hinzufügen' : esc(f.name), `
@@ -626,40 +686,55 @@ function editFriend(f){
     </div>
     <div class="sec">Freundschaft</div>
     <div class="fg">
-      <label>Level<select name="level">${FL.map((l, i) => `<option value="${i}" ${(f.level || 0) === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
-      <label>Resttage laut Spiel<input name="left" type="number" min="0" max="89" value="${pr.next ? pr.left : ''}" placeholder="z. B. 23"></label>
-      <label class="chk"><input type="checkbox" name="lucky" ${f.lucky ? 'checked' : ''}> Glücks-Freund</label>
+      <label>Freundeslevel<select name="level">${FL.map((l, i) => `<option value="${i}" ${(f.level || 0) === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>Resttage/-punkte laut Spiel<input name="left" type="number" min="0" max="90" value="${f.left ?? (pr.left ?? '')}"></label>
+      <label class="chk"><input type="checkbox" name="lucky" ${f.lucky ? 'checked' : ''}> Glücksfreund</label>
     </div>
-    <p class="note">Trag die Resttage ein, die das Spiel im Freundesprofil anzeigt – das Tool rechnet ab dann mit „Heute interagiert“ weiter.</p>
+    <p class="note">Hier korrigierst du nur den Zähler. Zum Abgleichen mit dem Spiel nimm „Prüfen“ – nur dort werden die Änderungsdaten fortgeschrieben.</p>
     <label class="fl">Notizen<textarea name="notes">${esc(f.notes)}</textarea></label>
-    ${snaps.length ? `<div class="sec">EP-Verlauf</div><table><tr><th>Datum</th><th>Level</th><th>EP gesamt</th><th>Δ</th><th></th></tr>
-      ${snaps.map((s, i) => { const prev = snaps[i + 1]; return `<tr><td>${fmtDate(s.date)}</td><td>${s.lvl ?? '–'}</td><td>${nf(s.xp)}</td><td>${prev && s.xp != null && prev.xp != null ? '+' + nf(s.xp - prev.xp) : ''}</td><td><button class="b s d" type="button" data-snap="${s.date}">✕</button></td></tr>`; }).join('')}</table>` : ''}`,
+    ${!isNew ? `<div class="sec">Stand</div><p class="note" style="margin:0">Letzte Prüfung: <b>${fmtDate(f.lastCheck)}</b> · EP zuletzt geändert: <b>${fmtDate(f.xpChanged)}</b> · Freundschaft zuletzt geändert: <b>${fmtDate(f.friendChanged)}</b>${f.importPrev ? `<br>Vorherige Werte aus Notion: ${nf(f.importPrev.xp)} EP · Rest ${f.importPrev.left ?? '–'}` : ''}</p>` : ''}
+    ${snaps.length ? `<div class="sec">Prüf-Verlauf</div><div style="overflow-x:auto"><table><tr><th>Datum</th><th>Lv</th><th>EP</th><th>Freundeslevel</th><th>Rest</th><th></th></tr>
+      ${snaps.map(s => `<tr><td>${fmtDate(s.date)}</td><td>${s.lvl ?? '–'}</td><td>${nf(s.xp)}</td><td>${s.level != null ? FL[s.level] : '–'}</td><td>${s.left ?? '–'}</td><td><button class="b s d" type="button" data-snap="${s.date}">✕</button></td></tr>`).join('')}</table></div>` : ''}`,
     isNew ? '' : `<button class="b d" value="del" formnovalidate style="margin-right:auto">Löschen</button>`,
     (fd, act) => {
       if (act === 'del'){ if (confirm(`${f.name} löschen? Postkarten bleiben erhalten.`)){ S.friends = S.friends.filter(x => x.id !== f.id); S.postcards.forEach(c => { if (c.friendId === f.id) c.friendId = ''; }); save(); render(); } return; }
       const lvl = +fd.get('level'), left = num(fd.get('left'));
       Object.assign(f, { name: fd.get('name').trim(), code: fd.get('code').trim(), region: fd.get('region').trim(), since: fd.get('since'), lucky: !!fd.get('lucky'), notes: fd.get('notes') });
-      if (lvl !== (f.level || 0) || left != null){
-        f.level = lvl;
-        f.days = lvl >= 4 ? Math.max(f.days || 0, 90) : (left != null ? Math.max(FT[lvl], FT[lvl + 1] - left) : FT[lvl]);
+      if (lvl !== (f.level || 0) || left !== (f.left ?? null)){
+        f.level = lvl; f.left = left ?? spanOf(lvl); f.leftDate = today(); delete f.prevState;
       }
       if (isNew) S.friends.push(f); save(); render();
     });
   dlgB.querySelectorAll('[data-snap]').forEach(b => b.onclick = () => { f.snaps = f.snaps.filter(s => s.date !== b.dataset.snap); save(); b.closest('tr').remove(); render(); });
 }
-function addSnap(f){
-  const last = (f.snaps || []).slice().sort((a, b) => b.date.localeCompare(a.date))[0];
-  openDlg(`EP von ${esc(f.name)}`, `
+// Abgleich mit dem Spiel: Werte eintragen, Änderungsdaten werden automatisch fortgeschrieben
+function checkFriend(f){
+  const c = f.chk || {};
+  openDlg(`${esc(f.name)} prüfen`, `
+    <p class="note" style="margin-top:0">Werte aus dem Freundesprofil im Spiel eintragen. Ändert sich etwas gegenüber der letzten Prüfung (${fmtDate(f.lastCheck)}), wird das Änderungsdatum auf den Prüftag gesetzt.</p>
     <div class="fg">
-      <label>Datum<input name="date" type="date" value="${today()}" required></label>
-      <label>Trainerlevel<input name="lvl" type="number" min="1" max="80" value="${last?.lvl ?? ''}"></label>
-      <label>EP gesamt<input name="xp" type="number" min="0" required placeholder="${last ? nf(last.xp) : 'z. B. 12500000'}"></label>
+      <label>Prüfdatum<input name="date" type="date" value="${today()}" required></label>
+      <label>Trainerlevel<input name="lvl" type="number" min="1" max="80" value="${f.trainerLvl ?? ''}"></label>
+      <label>EP (wie angezeigt)<input name="xp" type="number" min="0" value="${c.xpComparable === false ? '' : (f.xp ?? '')}"></label>
+      <label>Freundeslevel<select name="level">${FL.map((l, i) => `<option value="${i}" ${(f.level || 0) === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+      <label>Resttage/-punkte<input name="left" type="number" min="0" max="90" value="${f.left ?? ''}"></label>
     </div>
-    <p class="note">Im Freundesprofil die Gesamt-EP ablesen. Ab zwei Einträgen zeigt das Tool, wie aktiv jemand ist (Vergleich über bis zu 30 Tage).</p>`, '',
+    <p class="note">Letzte Prüfung: Lv ${c.lvl ?? '–'} · ${nf(c.xp)} EP · ${c.level != null ? FL[c.level] : '–'} · Rest ${c.left ?? '–'}${c.xpComparable === false ? '<br>⚠️ Der letzte EP-Wert ist ein großer Wert aus einer Prüfung vor dem 20.03.2026 – damals wurde offenbar etwas anderes notiert als heute. Bei dieser Prüfung zählt deshalb nur ein Trainerlevel-Aufstieg als EP-Änderung, ab der nächsten wieder jeder geänderte Wert.' : ''}</p>`, '',
     fd => {
-      f.snaps ||= [];
-      const s = { date: fd.get('date'), lvl: num(fd.get('lvl')), xp: num(fd.get('xp')) };
-      f.snaps = f.snaps.filter(x => x.date !== s.date); f.snaps.push(s); save(); render();
+      const d = fd.get('date');
+      const n = { lvl: num(fd.get('lvl')), xp: num(fd.get('xp')), level: +fd.get('level'), left: num(fd.get('left')) };
+      const lvlUp = n.lvl != null && c.lvl != null && n.lvl > c.lvl;
+      const xpDiff = n.xp != null && c.xp != null && n.xp !== c.xp;
+      const xpCh = lvlUp || (c.xpComparable !== false && xpDiff) || (c.lvl == null && c.xp == null && (n.xp != null || n.lvl != null));
+      const frCh = n.level !== c.level || (n.left != null && n.left !== c.left);
+      if (xpCh) f.xpChanged = d; else if (!f.xpChanged) f.xpChanged = d;
+      if (frCh) f.friendChanged = d; else if (!f.friendChanged) f.friendChanged = d;
+      f.lastCheck = d;
+      f.trainerLvl = n.lvl; f.xp = n.xp; f.level = n.level;
+      f.left = n.left ?? spanOf(n.level); f.leftDate = d; delete f.prevState;
+      f.chk = { date: d, lvl: n.lvl, xp: n.xp, level: n.level, left: n.left, xpComparable: true };
+      f.snaps = (f.snaps || []).filter(s => s.date !== d); f.snaps.push({ date: d, ...n });
+      save(); render();
     });
 }
 
@@ -770,12 +845,16 @@ function renderData(){
       <h3>Poke Genie</h3>
       <p class="note">CSV-Export aus Poke Genie einlesen. Erneute Importe aktualisieren bestehende Einträge, ohne deine eigenen Angaben zu überschreiben.</p>
       <button class="b" id="pgImp2">Poke Genie importieren</button>
+      <h3>Freunde</h3>
+      <p class="note">Freunde aus der vorbereiteten JSON-Datei oder einem Notion-CSV-Export übernehmen. Pokémon bleiben unverändert.</p>
+      <button class="b" id="impF2">Freunde importieren</button>
       <h3>Statistik</h3>
       <p>${S.pokemon.length} Pokémon · ${S.friends.length} Freunde · ${S.postcards.length} Postkarten</p>
       <h3 style="color:var(--bad)">Zurücksetzen</h3>
       <button class="b d" id="wipe">Alle Daten löschen</button>
     </div>`;
   pgImp2.onclick = openPgImport;
+  impF2.onclick = openFriendImport;
   exp.onclick = exportJSON;
   imp.onchange = async e => {
     const file = e.target.files[0]; if (!file) return;
@@ -897,6 +976,89 @@ function openPgImport(){
         render();
         if (!ok) return alert('Import eingelesen, aber Speichern fehlgeschlagen – siehe roter Hinweis oben.');
         alert(`${res.total} Pokémon gelesen:\n• ${res.added} neu\n• ${res.updated} aktualisiert${res.removed ? `\n• ${res.removed} entfernt` : ''}`);
+      }catch(err){ alert('Import fehlgeschlagen: ' + err.message); }
+    });
+}
+
+/* ===================== Freunde-Import (Notion) ===================== */
+// Akzeptiert die vorbereitete JSON-Datei (type "go-organizer-friends") oder einen CSV-Export der Notion-Datenbank.
+// Verändert ausschließlich S.friends – Pokémon, Postkarten usw. bleiben unangetastet.
+const MONTHS = { jan: 1, januar: 1, january: 1, feb: 2, februar: 2, february: 2, mär: 3, mar: 3, märz: 3, march: 3, apr: 4, april: 4, mai: 5, may: 5, jun: 6, juni: 6, june: 6, jul: 7, juli: 7, july: 7, aug: 8, august: 8, sep: 9, sept: 9, september: 9, okt: 10, oct: 10, oktober: 10, october: 10, nov: 11, november: 11, dez: 12, dec: 12, dezember: 12, december: 12 };
+function anyDate(v){
+  v = String(v || '').trim(); if (!v) return '';
+  let m = v.match(/^(\d{4})-(\d{2})-(\d{2})/); if (m) return m[0];
+  m = v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/); if (m) return `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = v.match(/^(\d{1,2})\.?\s+([A-Za-zÄÖÜäöü]+)\.?\s+(\d{4})/); if (m && MONTHS[m[2].toLowerCase()]) return `${m[3]}-${String(MONTHS[m[2].toLowerCase()]).padStart(2, '0')}-${m[1].padStart(2, '0')}`;
+  m = v.match(/^([A-Za-zÄÖÜäöü]+)\.?\s+(\d{1,2}),?\s+(\d{4})/); if (m && MONTHS[m[1].toLowerCase()]) return `${m[3]}-${String(MONTHS[m[1].toLowerCase()]).padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/); if (m) return `${m[3]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
+  return '';
+}
+const levelFromLabel = v => {
+  const s = String(v ?? '').trim(); if (s === '') return null;
+  const m = s.match(/^\(?(\d)\)?/); if (m) return Math.min(MAXLVL, +m[1]);
+  const i = FL.findIndex(l => l.toLowerCase() === s.toLowerCase()); return i < 0 ? null : i;
+};
+const yes = v => /^(yes|ja|true|1|__yes__|✓|x)$/i.test(String(v ?? '').trim());
+const numOrNull = v => { const s = String(v ?? '').replace(/[.\s]/g, '').replace(',', '.'); return s === '' || isNaN(+s) ? null : +s; };
+function notionCsvToFriends(text){
+  const rows = parseCSVText(text);
+  if (!rows.length || !('Name' in rows[0]) || !('Freundeslevel' in rows[0])) throw new Error('Unbekanntes Format – erwartet wird der CSV-Export der Notion-Datenbank „Pokémon GO-Freunde“.');
+  return rows.map(r => ({
+    name: r['Name'], level: levelFromLabel(r['Freundeslevel']), trainerLvl: numOrNull(r['Lvl']),
+    xp: numOrNull(r['XP zuletzt gesehen']), xpPrev: numOrNull(r['XP vorher']),
+    left: numOrNull(r['Fortschritt zuletzt gesehen']), leftPrev: numOrNull(r['Fortschritt vorher']),
+    lastCheck: anyDate(r['L. Prüf.']), xpChanged: anyDate(r['L. XP-Änd.']), friendChanged: anyDate(r['L. F-änd.']),
+    region: r['Region'] || '', lucky: yes(r['Glücksfreund'])
+  }));
+}
+function importFriends(list){
+  const byName = new Map(S.friends.map(f => [f.name.trim().toLowerCase(), f]));
+  let added = 0, updated = 0, skipped = 0;
+  for (const r of list){
+    const name = String(r.name || '').trim(); if (!name){ skipped++; continue; }
+    let f = byName.get(name.toLowerCase());
+    const isNew = !f;
+    if (isNew){ f = { id: uid(), name, snaps: [] }; }
+    const lvl = r.level ?? f.level ?? 0;
+    Object.assign(f, {
+      level: lvl, left: r.left ?? spanOf(lvl), leftDate: r.lastCheck || today(),
+      trainerLvl: r.trainerLvl ?? f.trainerLvl ?? null, xp: r.xp ?? f.xp ?? null,
+      lastCheck: r.lastCheck || f.lastCheck || '', xpChanged: r.xpChanged || f.xpChanged || '', friendChanged: r.friendChanged || f.friendChanged || '',
+      lucky: !!r.lucky
+    });
+    if (r.region) f.region = r.region;
+    if (r.xpPrev != null || r.leftPrev != null) f.importPrev = { xp: r.xpPrev, left: r.leftPrev };
+    // Vor der Umstellung (ab 20.03.2026) wurden Gesamt-EP notiert – die sind mit den heutigen Werten nicht vergleichbar
+    const oldMetric = r.xp != null && r.xp >= 10000 && (r.lastCheck || '') < '2026-03-20';
+    f.chk = { date: f.lastCheck, lvl: f.trainerLvl, xp: f.xp, level: f.level, left: r.left ?? null, xpComparable: !oldMetric };
+    if (f.lastCheck){
+      f.snaps = (f.snaps || []).filter(s => s.date !== f.lastCheck);
+      f.snaps.push({ date: f.lastCheck, lvl: f.trainerLvl, xp: f.xp, level: f.level, left: r.left ?? null });
+    }
+    delete f.prevState;
+    if (isNew){ S.friends.push(f); byName.set(name.toLowerCase(), f); added++; } else updated++;
+  }
+  return { added, updated, skipped };
+}
+function openFriendImport(){
+  openDlg('Freunde importieren', `
+    <p style="margin-top:0">Wähle die vorbereitete Datei <b>go-organizer-freunde.json</b> oder einen CSV-Export der Notion-Datenbank (Notion: „…“ → Exportieren → Markdown &amp; CSV).</p>
+    <label class="fl">Datei<input type="file" name="file" accept=".json,.csv,application/json,text/csv" required></label>
+    <p class="note">Übernommen werden Name, Freundeslevel, Resttage, Trainerlevel, EP, Region, Glücksfreund und die Daten der letzten Prüfung und Änderungen. Vorhandene Freunde mit gleichem Namen werden aktualisiert; Freundescode, Notizen und Postkarten bleiben erhalten. <b>Pokémon werden nicht verändert.</b></p>
+    <p class="note">Tipp: Vorher unter „Daten“ eine Sicherung exportieren.</p>`, '',
+    async fd => {
+      const file = fd.get('file'); if (!file || !file.size) return;
+      try{
+        const text = await file.text();
+        let list;
+        if (/^\s*[\[{]/.test(text)){
+          const d = JSON.parse(text);
+          list = Array.isArray(d) ? d : d.friends;
+          if (!Array.isArray(list) || (d.type && d.type !== 'go-organizer-friends')) throw new Error('Unbekanntes JSON-Format. Für eine komplette Sicherung bitte „Daten → Importieren“ verwenden.');
+        } else list = notionCsvToFriends(text);
+        const res = importFriends(list);
+        const ok = await save(); render();
+        alert(ok ? `${list.length} Freunde gelesen:\n• ${res.added} neu\n• ${res.updated} aktualisiert${res.skipped ? `\n• ${res.skipped} ohne Namen übersprungen` : ''}` : 'Import eingelesen, aber Speichern fehlgeschlagen – siehe roter Hinweis oben.');
       }catch(err){ alert('Import fehlgeschlagen: ' + err.message); }
     });
 }
