@@ -222,7 +222,7 @@ async function initStore(){
   }
   try{ for (const k of ['go-organizer-dex', 'go-organizer-dex-v2']) localStorage.removeItem(k); }catch(e){}
   if (S.pokemon.some(p => 'pvp' in p)){ S.pokemon.forEach(p => delete p.pvp); save(); }
-  if (migrateFriends()) save();
+  if (migrateFriends() | migrateXpDigits()) save();
   try{ if (navigator.storage?.persist) PERSISTED = (await navigator.storage.persisted()) || (await navigator.storage.persist()); }catch(e){}
 }
 function exportJSON(){
@@ -338,6 +338,34 @@ const MAXLVL = FL.length - 1;
 const spanOf = lvl => lvl >= MAXLVL ? null : FT[lvl + 1] - FT[lvl];
 const unitOf = (lvl, n) => lvl === 4 ? (n === 1 ? 'Punkt' : 'Punkte') : (n === 1 ? 'Tag' : 'Tage');
 const CHECK_DUE = 14;   // Tage, nach denen eine erneute Prüfung fällig ist
+// EP werden nur mit den letzten 4 Ziffern notiert und verglichen (volle Zahlen werden gekürzt)
+const XP_DIGITS = 4, XP_MOD = 10 ** XP_DIGITS;
+const xpS = v => (v == null || v === '' || isNaN(+v)) ? null : Math.abs(Math.round(+v)) % XP_MOD;
+const xpFmt = v => xpS(v) == null ? '–' : '…' + String(xpS(v)).padStart(XP_DIGITS, '0');
+// Einmalige Korrektur: Prüfungen ab dem 30.10.2026, bei denen volle EP eingetragen wurden, auf 4 Ziffern kürzen
+// und die EP-Änderung neu bewerten (Vergleich nur über die letzten 4 Ziffern).
+function migrateXpDigits(){
+  if (S.xpDigits === XP_DIGITS) return false;
+  const FROM = '2026-10-30';
+  for (const f of S.friends){
+    for (const sn of f.snaps || []) if (sn.date >= FROM && sn.xp != null) sn.xp = xpS(sn.xp);
+    if ((f.lastCheck || '') >= FROM){
+      if (f.xp != null) f.xp = xpS(f.xp);
+      if (f.chk && f.chk.xp != null) f.chk.xp = xpS(f.chk.xp);
+      const sn = (f.snaps || []).slice().sort((a, b) => a.date.localeCompare(b.date));
+      const cur = sn.find(x => x.date === f.lastCheck);
+      const prev = sn.filter(x => x.date < f.lastCheck).pop();
+      if (cur && prev && cur.xp != null && prev.xp != null){
+        const changed = xpS(cur.xp) !== xpS(prev.xp) || (cur.lvl != null && prev.lvl != null && cur.lvl > prev.lvl);
+        if (changed) f.xpChanged = f.lastCheck;
+        else if (f.xpChanged === f.lastCheck) f.xpChanged = prev.date;   // spätestens seit der Vorprüfung unverändert
+      }
+    }
+    if (f.chk) delete f.chk.xpComparable;
+  }
+  S.xpDigits = XP_DIGITS;
+  return true;
+}
 
 function friendProgress(f){
   const lvl = f.level || 0;
@@ -651,7 +679,7 @@ function friendCard(f, ac){
   const pats = [...new Set(cards.map(c => c.viv).filter(Boolean))];
   const hearts = '♥'.repeat(lvl) + '♡'.repeat(MAXLVL - lvl);
   const eta = pr.left ? new Date(Date.now() + (pr.left - (f.last === t ? 0 : 1)) * 864e5).toLocaleDateString('de-DE') : '';
-  const trainer = [f.trainerLvl ? `Lv ${f.trainerLvl}` : '', f.xp != null ? `${nf(f.xp)} EP` : ''].filter(Boolean).join(' · ');
+  const trainer = [f.trainerLvl ? `Lv ${f.trainerLvl}` : '', f.xp != null ? `EP ${xpFmt(f.xp)}` : ''].filter(Boolean).join(' · ');
   const short = d => d ? new Date(d + 'T12:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '–';
   return `<div class="card fr">
     <div class="row"><h3 class="sp">${esc(f.name)} ${f.lucky ? '<span class="bd lu">Glücksfreund</span>' : ''}</h3><button class="b s" data-act="edit" data-id="${f.id}" title="Bearbeiten">✎</button></div>
@@ -692,9 +720,9 @@ function editFriend(f){
     </div>
     <p class="note">Hier korrigierst du nur den Zähler. Zum Abgleichen mit dem Spiel nimm „Prüfen“ – nur dort werden die Änderungsdaten fortgeschrieben.</p>
     <label class="fl">Notizen<textarea name="notes">${esc(f.notes)}</textarea></label>
-    ${!isNew ? `<div class="sec">Stand</div><p class="note" style="margin:0">Letzte Prüfung: <b>${fmtDate(f.lastCheck)}</b> · EP zuletzt geändert: <b>${fmtDate(f.xpChanged)}</b> · Freundschaft zuletzt geändert: <b>${fmtDate(f.friendChanged)}</b>${f.importPrev ? `<br>Vorherige Werte aus Notion: ${nf(f.importPrev.xp)} EP · Rest ${f.importPrev.left ?? '–'}` : ''}</p>` : ''}
-    ${snaps.length ? `<div class="sec">Prüf-Verlauf</div><div style="overflow-x:auto"><table><tr><th>Datum</th><th>Lv</th><th>EP</th><th>Freundeslevel</th><th>Rest</th><th></th></tr>
-      ${snaps.map(s => `<tr><td>${fmtDate(s.date)}</td><td>${s.lvl ?? '–'}</td><td>${nf(s.xp)}</td><td>${s.level != null ? FL[s.level] : '–'}</td><td>${s.left ?? '–'}</td><td><button class="b s d" type="button" data-snap="${s.date}">✕</button></td></tr>`).join('')}</table></div>` : ''}`,
+    ${!isNew ? `<div class="sec">Stand</div><p class="note" style="margin:0">Letzte Prüfung: <b>${fmtDate(f.lastCheck)}</b> · EP zuletzt geändert: <b>${fmtDate(f.xpChanged)}</b> · Freundschaft zuletzt geändert: <b>${fmtDate(f.friendChanged)}</b>${f.importPrev ? `<br>Vorherige Werte aus Notion: EP ${xpFmt(f.importPrev.xp)} · Rest ${f.importPrev.left ?? '–'}` : ''}</p>` : ''}
+    ${snaps.length ? `<div class="sec">Prüf-Verlauf</div><div style="overflow-x:auto"><table><tr><th>Datum</th><th>Lv</th><th>EP (4 Ziffern)</th><th>Freundeslevel</th><th>Rest</th><th></th></tr>
+      ${snaps.map(s => `<tr><td>${fmtDate(s.date)}</td><td>${s.lvl ?? '–'}</td><td title="${s.xp ?? ''}">${xpFmt(s.xp)}</td><td>${s.level != null ? FL[s.level] : '–'}</td><td>${s.left ?? '–'}</td><td><button class="b s d" type="button" data-snap="${s.date}">✕</button></td></tr>`).join('')}</table></div>` : ''}`,
     isNew ? '' : `<button class="b d" value="del" formnovalidate style="margin-right:auto">Löschen</button>`,
     (fd, act) => {
       if (act === 'del'){ if (confirm(`${f.name} löschen? Postkarten bleiben erhalten.`)){ S.friends = S.friends.filter(x => x.id !== f.id); S.postcards.forEach(c => { if (c.friendId === f.id) c.friendId = ''; }); save(); render(); } return; }
@@ -715,27 +743,31 @@ function checkFriend(f){
     <div class="fg">
       <label>Prüfdatum<input name="date" type="date" value="${today()}" required></label>
       <label>Trainerlevel<input name="lvl" type="number" min="1" max="80" value="${f.trainerLvl ?? ''}"></label>
-      <label>EP (wie angezeigt)<input name="xp" type="number" min="0" value="${c.xpComparable === false ? '' : (f.xp ?? '')}"></label>
+      <label>EP – nur die letzten 4 Ziffern<input name="xp" inputmode="numeric" pattern="[0-9.\s]*" maxlength="15" placeholder="z. B. 4306" value="${xpS(f.xp) == null ? '' : String(xpS(f.xp)).padStart(XP_DIGITS, '0')}"><span id="xpHint" style="font-weight:400"></span></label>
       <label>Freundeslevel<select name="level">${FL.map((l, i) => `<option value="${i}" ${(f.level || 0) === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>Resttage/-punkte<input name="left" type="number" min="0" max="90" value="${f.left ?? ''}"></label>
     </div>
-    <p class="note">Letzte Prüfung: Lv ${c.lvl ?? '–'} · ${nf(c.xp)} EP · ${c.level != null ? FL[c.level] : '–'} · Rest ${c.left ?? '–'}${c.xpComparable === false ? '<br>⚠️ Der letzte EP-Wert ist ein großer Wert aus einer Prüfung vor dem 20.03.2026 – damals wurde offenbar etwas anderes notiert als heute. Bei dieser Prüfung zählt deshalb nur ein Trainerlevel-Aufstieg als EP-Änderung, ab der nächsten wieder jeder geänderte Wert.' : ''}</p>`, '',
+    <p class="note">Bei den EP zählen nur die <b>letzten 4 Ziffern</b> der Gesamt-EP aus dem Profil (aus 12.345.678 wird 5678). Gibst du die volle Zahl ein, kürzt das Tool sie automatisch.</p>
+    <p class="note">Letzte Prüfung: Lv ${c.lvl ?? '–'} · EP ${xpFmt(c.xp)} · ${c.level != null ? FL[c.level] : '–'} · Rest ${c.left ?? '–'}</p>`, '',
     fd => {
       const d = fd.get('date');
-      const n = { lvl: num(fd.get('lvl')), xp: num(fd.get('xp')), level: +fd.get('level'), left: num(fd.get('left')) };
+      const n = { lvl: num(fd.get('lvl')), xp: xpS(String(fd.get('xp')).replace(/[^0-9]/g, '')), level: +fd.get('level'), left: num(fd.get('left')) };
       const lvlUp = n.lvl != null && c.lvl != null && n.lvl > c.lvl;
-      const xpDiff = n.xp != null && c.xp != null && n.xp !== c.xp;
-      const xpCh = lvlUp || (c.xpComparable !== false && xpDiff) || (c.lvl == null && c.xp == null && (n.xp != null || n.lvl != null));
+      const xpDiff = n.xp != null && c.xp != null && n.xp !== xpS(c.xp);
+      const xpCh = lvlUp || xpDiff || (c.lvl == null && c.xp == null && (n.xp != null || n.lvl != null));
       const frCh = n.level !== c.level || (n.left != null && n.left !== c.left);
       if (xpCh) f.xpChanged = d; else if (!f.xpChanged) f.xpChanged = d;
       if (frCh) f.friendChanged = d; else if (!f.friendChanged) f.friendChanged = d;
       f.lastCheck = d;
       f.trainerLvl = n.lvl; f.xp = n.xp; f.level = n.level;
       f.left = n.left ?? spanOf(n.level); f.leftDate = d; delete f.prevState;
-      f.chk = { date: d, lvl: n.lvl, xp: n.xp, level: n.level, left: n.left, xpComparable: true };
+      f.chk = { date: d, lvl: n.lvl, xp: n.xp, level: n.level, left: n.left };
       f.snaps = (f.snaps || []).filter(s => s.date !== d); f.snaps.push({ date: d, ...n });
       save(); render();
     });
+  const xi = dlgForm.xp, xh = document.getElementById('xpHint');
+  const upd = () => { const raw = xi.value.replace(/[^0-9]/g, ''); xh.textContent = raw.length > XP_DIGITS ? `→ gespeichert als ${String(xpS(raw)).padStart(XP_DIGITS, '0')}` : ''; };
+  xi.oninput = upd; upd();
 }
 
 /* ---------- Postkarten ---------- */
@@ -1028,9 +1060,8 @@ function importFriends(list){
     });
     if (r.region) f.region = r.region;
     if (r.xpPrev != null || r.leftPrev != null) f.importPrev = { xp: r.xpPrev, left: r.leftPrev };
-    // Vor der Umstellung (ab 20.03.2026) wurden Gesamt-EP notiert – die sind mit den heutigen Werten nicht vergleichbar
-    const oldMetric = r.xp != null && r.xp >= 10000 && (r.lastCheck || '') < '2026-03-20';
-    f.chk = { date: f.lastCheck, lvl: f.trainerLvl, xp: f.xp, level: f.level, left: r.left ?? null, xpComparable: !oldMetric };
+    // EP werden über die letzten 4 Ziffern verglichen – ältere volle Werte bleiben zur Info erhalten
+    f.chk = { date: f.lastCheck, lvl: f.trainerLvl, xp: f.xp, level: f.level, left: r.left ?? null };
     if (f.lastCheck){
       f.snaps = (f.snaps || []).filter(s => s.date !== f.lastCheck);
       f.snaps.push({ date: f.lastCheck, lvl: f.trainerLvl, xp: f.xp, level: f.level, left: r.left ?? null });
