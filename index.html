@@ -117,6 +117,8 @@ dialog::backdrop{background:rgba(10,15,30,.5)}
 <datalist id="dlForms"></datalist>
 <datalist id="dlRegion"></datalist>
 
+<!-- GitHub-Sync (gemeinsam für alle Tools, Einstellungen auf der Startseite) -->
+<script src="/startseite/sync-v1.js"></script>
 <script>
 /* ===================== Daten & Speicher (IndexedDB) ===================== */
 // Daten liegen in IndexedDB "pokemon-go-tool" (Store "kv", Eintrag "state").
@@ -125,6 +127,7 @@ const LEGACY_KEY = 'go-organizer-v1';
 const DB_NAME = 'pokemon-go-tool', DB_STORE = 'kv', DB_REC = 'state';
 const blank = () => ({ pokemon: [], friends: [], postcards: [], regionHints: {}, version: 1 });
 let S = blank();
+let SYNC = null;              // GitHub-Sync, siehe initSync()
 let STORE_MODE = 'idb';      // 'idb' | 'ls' (Notlösung, falls IndexedDB nicht verfügbar) | 'locked'
 let PERSISTED = null;
 let db = null;
@@ -175,7 +178,7 @@ function save(){
     try{
       if (STORE_MODE === 'idb') await idbPut(snap);
       else localStorage.setItem(LEGACY_KEY, JSON.stringify(snap));
-      storeBanner(''); return true;
+      storeBanner(''); if (SYNC) SYNC.changed(); return true;
     }catch(e){
       const quota = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
       storeBanner(`Speichern fehlgeschlagen${quota ? ' – Speicherplatz voll' : ''} (${e?.message || e}). Letzte Änderungen sind NICHT gesichert.`);
@@ -1163,7 +1166,19 @@ themeBtn.onclick = () => {
   const t = dark ? 'light' : 'dark'; applyTheme(t); try{ localStorage.setItem(TH, t); }catch(e){}
 };
 document.getElementById('main').innerHTML = '<div class="empty">Lade Daten…</div>';
-initStore().then(() => { render(); loadDex(); });
+/* GitHub-Sync: gleicht mit tool-daten/pokemon-go.json ab, sobald auf der Startseite eingerichtet */
+function initSync(){
+  if (!window.ToolSync || STORE_MODE !== 'idb') return;
+  SYNC = ToolSync.create({
+    tool: 'pokemon-go',
+    collections: { pokemon: 'array', friends: 'array', postcards: 'array', regionHints: 'map' },
+    fields: ['xpDigits'],
+    get: () => S,
+    apply: async d => { S = Object.assign(blank(), S, d); const ok = await save(); render(); return ok; }
+  });
+  SYNC.start();
+}
+initStore().then(() => { render(); loadDex(); initSync(); });
 </script>
 </body>
 </html>
