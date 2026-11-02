@@ -497,8 +497,12 @@ function ivStars(p){
 
 function renderMons(){
   let list = S.pokemon.slice();
-  const q = F.q.trim().toLowerCase();
-  if (q) list = list.filter(p => [p.name, p.nick, p.form, p.costume, p.bgName, p.size, p.tags, p.location, p.notes, p.fast, p.c1, p.c2, '#' + p.dex].join(' ').toLowerCase().includes(q));
+  const terms = parseSearch(F.q);
+  if (terms.length) list = list.filter(p => {
+    const hay = [p.name, p.nick, p.form, p.costume, p.bgName, p.size, p.tags, p.location, p.notes, p.fast, p.c1, p.c2, '#' + p.dex].join(' ').toLowerCase();
+    const names = [p.name, p.nick].filter(Boolean).map(x => x.toLowerCase());
+    return terms.some(t => t.every(w => w.exact ? names.includes(w.v) || '#' + p.dex === w.v : hay.includes(w.v)));
+  });
   const fl = F.flt;
   if (fl === 'shiny') list = list.filter(p => p.shiny);
   if (fl === 'costume') list = list.filter(p => p.costume);
@@ -537,7 +541,7 @@ function renderMons(){
     <div class="bar">
       <button class="b p" id="addMon">+ Pokémon</button>
       <button class="b" id="pgImp">Poke Genie importieren</button>
-      <input id="q" placeholder="Suchen (Name, Kostüm, Tag, Attacke…)" value="${esc(F.q)}" style="flex:1;min-width:180px">
+      <input id="q" placeholder="Suchen, z. B. Evoli & Blitza & Flamara" title="Mehrere Suchbegriffe mit & , ; oder | trennen – angezeigt wird, was zu irgendeinem passt. Mit + verknüpfen, wenn alles zutreffen soll (z. B. Glurak + Luftschnitt). In Anführungszeichen = genauer Name (z. B. &quot;Mew&quot; ohne Mewtu)." value="${esc(F.q)}" style="flex:1;min-width:180px">
       <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['form', 'Mit Form'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="sort">${[['new', 'Neueste'], ['dex', 'Pokédex-Nr.'], ['cp', 'WP'], ['iv', 'IV'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
@@ -553,6 +557,14 @@ function renderMons(){
   flt.onchange = e => { F.flt = e.target.value; F.lim = 120; renderMons(); };
   sort.onchange = e => { F.sort = e.target.value; F.lim = 120; renderMons(); };
   main.querySelectorAll('.mon').forEach(el => el.onclick = () => editMon(S.pokemon.find(p => p.id === el.dataset.id)));
+}
+// Suchstring: Begriffe mit & , ; | = ODER; innerhalb eines Begriffs mit + = UND; "…" = genauer Name
+function parseSearch(q){
+  return String(q || '').split(/[&,;|]/).map(part => part.split('+').map(w => {
+    w = w.trim().toLowerCase(); if (!w) return null;
+    const m = w.match(/^["„“”'](.*)["„“”']$/);
+    return m ? { v: m[1].trim(), exact: true } : { v: w, exact: false };
+  }).filter(w => w && w.v)).filter(t => t.length);
 }
 function monCard(p){
   const iv = ivPct(p);
