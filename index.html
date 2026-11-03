@@ -45,6 +45,18 @@ button.d{color:var(--bad)}
 .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;box-shadow:var(--shadow)}
 .mon{cursor:pointer;position:relative}
 .mon img{width:96px;height:96px;object-fit:contain;display:block;margin:0 auto}
+.pic{position:relative;width:112px;height:112px;margin:0 auto;border-radius:12px;overflow:hidden;flex:none}
+.pic img.picbg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;margin:0}
+.pic img.picmon{position:relative;width:100%;height:100%;object-fit:contain;margin:0}
+.pic.hasbg img.picmon{padding:6px;box-sizing:border-box}
+.pic.dmx img.picmon{padding:5px;box-sizing:border-box;filter:drop-shadow(0 0 2px rgba(255,31,107,.95)) drop-shadow(0 0 5px rgba(255,31,107,.55))}
+.picker{margin-top:8px;border:1px solid var(--line);border-radius:10px;padding:8px;max-height:340px;overflow:auto}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px;margin-top:6px}
+.pitem{border:2px solid transparent;border-radius:9px;padding:2px;cursor:pointer;background:none;font:inherit;font-size:11px;color:inherit;text-align:center;line-height:1.25}
+.pitem.on{border-color:var(--acc);background:var(--acc2)}
+.pitem img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:7px;display:block;margin:0 0 3px;background:var(--line)}
+.pitem.pcos img{object-fit:contain;background:var(--acc2)}
+.pitem .none{display:flex;align-items:center;justify-content:center;aspect-ratio:1;border-radius:7px;background:var(--line);margin-bottom:3px;font-size:20px}
 .mon .nm{font-weight:700;text-align:center}
 .mon .sub{color:var(--muted);font-size:13px;text-align:center;min-height:18px}
 .badges{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:6px}
@@ -88,7 +100,7 @@ dialog::backdrop{background:rgba(10,15,30,.5)}
 .stat b{font-size:20px;display:block}
 .empty{text-align:center;color:var(--muted);padding:40px 10px}
 .note{font-size:13px;color:var(--muted)}
-@media (max-width:520px){.grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.mon img{width:72px;height:72px}}
+@media (max-width:520px){.grid{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}.mon img{width:72px;height:72px}.mon .pic{width:88px;height:88px}.mon .pic img{width:100%;height:100%}}
 
 /* Home-Bildschirm-App am iPhone: nicht unter Statusleiste/Notch zeichnen */
 header{padding-top:env(safe-area-inset-top)}
@@ -317,6 +329,7 @@ function findForm(dex, form){
 }
 function monSpriteKey(p){
   if (p.dex === 666 && p.viv) return '666-' + (VIV_FILE[p.viv] || p.viv);
+  if (p.dyna === 'giga'){ const g = gmaxKey(p); if (g != null) return g; }
   const t = findForm(p.dex, p.form);
   if (!t) return p.dex;
   return typeof t[2] === 'number' ? t[2] : `${p.dex}-${t[2]}`;
@@ -324,6 +337,50 @@ function monSpriteKey(p){
 // Bild passend zu Form/Muster; fällt bei fehlender Datei auf das Grundbild zurück
 const monSprite = p => sprite(monSpriteKey(p), p.shiny);
 const imgFallback = p => monSpriteKey(p) === p.dex ? `this.style.visibility='hidden'` : `if(!this.dataset.fb){this.dataset.fb=1;this.src='${sprite(p.dex, p.shiny)}'}else this.style.visibility='hidden'`;
+
+/* Kostüme & Hintergründe: Originalgrafiken aus PokeMiners/pogo_assets, direkt von GitHub geladen (nicht im Repo) */
+const PM_BASE = 'https://raw.githubusercontent.com/PokeMiners/pogo_assets/master/Images/';
+// Dex → [[Variante, Flags]] · Flags: n normal, s shiny, g weiblich, G weiblich+shiny
+const COSTUMES = {"1":[["cJAN_2020_NOEVOLVE","ns"],["cSPRING_2020_NOEVOLVE","ns"]],"2":[["cJAN_2020_NOEVOLVE","ns"],["cSPRING_2020_NOEVOLVE","ns"]],"3":[["cJAN_2020_NOEVOLVE","nsgG"],["cSPRING_2020_NOEVOLVE","nsgG"]],"4":[["cJAN_2020_NOEVOLVE","ns"],["cSPRING_2020_NOEVOLVE","ns"]],"5":[["cJAN_2020_NOEVOLVE","ns"],["cSPRING_2020_NOEVOLVE","ns"]],"6":[["cJAN_2020_NOEVOLVE","ns"],["cSPRING_2020_NOEVOLVE","ns"]],"7":[["cJAN_2020_NOEVOLVE","ns"],["cSPRING_2020_NOEVOLVE","ns"],["cSUMMER_2018","ns"]],"8":[["cJAN_2020_NOEVOLVE","ns"],["cSPRING_2020_NOEVOLVE","ns"],["cSUMMER_2018","ns"]],"9":[["cJAN_2020_NOEVOLVE","ns"],["cSPRING_2020_NOEVOLVE","ns"],["cSUMMER_2018","ns"]],"12":[["cFASHION_2021_NOEVOLVE","nsgG"]],"20":[["cJAN_2020_NOEVOLVE","nsgG"]],"25":[["cANNIVERSARY","nsgG"],["cANNIVERSARY_2022_NOEVOLVE","nsgG"],["cAPRIL_2020_NOEVOLVE","nsgG"],["cCOSTUME_1","nsgG"],["cCOSTUME_2","nsgG"],["cFALL_2018","nsgG"],["cFALL_2023_NOEVOLVE","nsgG"],["cFEB_2019","nsgG"],["cGOFEST_2021_NOEVOLVE","nsgG"],["cGOFEST_2022_NOEVOLVE","nsgG"],["cGOTOUR_2023_BANDANA","nsgG"],["cGOTOUR_2023_BANDANA_NOEVOLVE","nsgG"],["cGOTOUR_2023_HAT","nsgG"],["cGOTOUR_2023_HAT_NOEVOLVE","nsgG"],["cHALLOWEEN_2017","nsgG"],["cHALLOWEEN_2021_NOEVOLVE","nsgG"],["cHOENN_2020_NOEVOLVE","nsgG"],["cHOLIDAY_2016","nsgG"],["cHOLIDAY_2023","nsgG"],["cINDONESIA_2025_NOEVOLVE","nsgG"],["cJAN_2020_NOEVOLVE","nsgG"],["cJAN_2023_NOEVOLVE","nsgG"],["cJOHTO_2020_NOEVOLVE","nsgG"],["cKANTO_2020_NOEVOLVE","nsgG"],["cMAY_2019_NOEVOLVE","nsgG"],["cNOVEMBER_2018","nsgG"],["cONE_YEAR_ANNIVERSARY","nsgG"],["cPI","nsgG"],["cSAFARI_2020_NOEVOLVE","nsgG"],["cSINNOH_2020_NOEVOLVE","nsgG"],["cSPRING_2023","nsgG"],["cSUMMER_2018","nsgG"],["cTCG_2022_NOEVOLVE","nsgG"],["cWINTER_2018","nsgG"]],"26":[["cANNIVERSARY","nsgG"],["cCOSTUME_1","nsgG"],["cCOSTUME_2","nsgG"],["cFALL_2018","nsgG"],["cFEB_2019","nsgG"],["cHALLOWEEN_2017","nsgG"],["cHOLIDAY_2016","nsgG"],["cHOLIDAY_2023","nsgG"],["cNOVEMBER_2018","nsgG"],["cONE_YEAR_ANNIVERSARY","nsgG"],["cPI","nsgG"],["cSPRING_2023","nsgG"],["cSUMMER_2018","nsgG"],["cWINTER_2018","nsgG"]],"31":[["cROYAL_NOEVOLVE","ns"]],"33":[["cJAN_2020_NOEVOLVE","ns"]],"34":[["cROYAL_NOEVOLVE","ns"]],"37":[["cFALL_2022","ns"]],"38":[["cFALL_2022","ns"]],"39":[["cJAN_2024","ns"]],"40":[["cJAN_2024","ns"]],"50":[["cFALL_2022","ns"]],"51":[["cFALL_2022","ns"]],"54":[["cHOLIDAY_2023","ns"]],"55":[["cHOLIDAY_2023","ns"]],"77":[["cSPRING_2023_VALOR","ns"],["fGALARIAN.cGOFEST_2021_NOEVOLVE","ns"]],"78":[["cSPRING_2023_VALOR","ns"]],"79":[["cPI_NOEVOLVE","ns"]],"88":[["cANNIVERSARY_2024","ns"]],"89":[["cANNIVERSARY_2024","ns"]],"94":[["cFALL_2022_NOEVOLVE","ns"],["cFALL_2023_NOEVOLVE","ns"],["cJAN_2020_NOEVOLVE","ns"]],"104":[["cFALL_2023","ns"]],"105":[["cFALL_2023","ns"]],"113":[["cNOVEMBER_2018","ns"]],"125":[["cSPRING_2023_INSTINCT","ns"]],"131":[["cSPRING_2023_MYSTIC","ns"]],"133":[["cHOLIDAY_2022","nsgG"],["cJAN_2020_NOEVOLVE","nsgG"],["cMAY_2023","sgG"],["cNOVEMBER_2018","nsgG"],["cSPRING_2023","nsgG"]],"134":[["cHOLIDAY_2022","ns"],["cMAY_2023","ns"],["cNOVEMBER_2018","ns"],["cSPRING_2023","ns"]],"135":[["cHOLIDAY_2022","ns"],["cMAY_2023","ns"],["cNOVEMBER_2018","ns"],["cSPRING_2023","ns"]],"136":[["cHOLIDAY_2022","ns"],["cMAY_2023","ns"],["cNOVEMBER_2018","ns"],["cSPRING_2023","ns"]],"143":[["cGOFEST_2022_NOEVOLVE","ns"],["cNIGHTCAP","ns"]],"149":[["cFALL_2023","ns"]],"150":[["cONE_YEAR_ANNIVERSARY","ns"]],"163":[["cJAN_2022_NOEVOLVE","ns"]],"164":[["cJAN_2022_NOEVOLVE","ns"]],"172":[["cANNIVERSARY","ns"],["cCOSTUME_2","ns"],["cFALL_2018","ns"],["cHALLOWEEN_2017","ns"],["cHOLIDAY_2016","ns"],["cNOVEMBER_2018","ns"],["cONE_YEAR_ANNIVERSARY","ns"],["cSPRING_2023","ns"],["cSUMMER_2018","ns"],["cWINTER_2018","ns"]],"175":[["cAPRIL_2020_NOEVOLVE","ns"]],"176":[["cAPRIL_2020_NOEVOLVE","ns"]],"194":[["cFALL_2023","nsgG"]],"195":[["cFALL_2023","nsgG"]],"196":[["cHOLIDAY_2022","ns"],["cMAY_2023","ns"],["cNOVEMBER_2018","ns"],["cSPRING_2023","ns"]],"197":[["cHOLIDAY_2022","ns"],["cMAY_2023","ns"],["cNOVEMBER_2018","ns"],["cSPRING_2023","ns"]],"202":[["cJAN_2020_NOEVOLVE","nsgG"]],"215":[["cFASHION_2021_NOEVOLVE","nsgG"]],"216":[["cHALLOWEEN_2025","ns"]],"217":[["cHALLOWEEN_2025","nsgG"]],"234":[["cWINTER_2018","ns"]],"238":[["cFALL_2020_NOEVOLVE","ns"]],"239":[["cSPRING_2023_INSTINCT","ns"]],"242":[["cNOVEMBER_2018","ns"]],"249":[["cONE_YEAR_ANNIVERSARY","ns"]],"263":[["fGALARIAN.cGOFEST_2021_NOEVOLVE","ns"]],"265":[["cJAN_2020_NOEVOLVE","ns"]],"281":[["cFALL_2020_NOEVOLVE","ns"]],"282":[["cGOFEST_2021_NOEVOLVE","ns"]],"287":[["cSUMMER_2024","ns"]],"288":[["cSUMMER_2024","ns"]],"289":[["cSUMMER_2024","ns"]],"330":[["cGOFEST_2021_NOEVOLVE","ns"]],"355":[["cFALL_2022_NOEVOLVE","ns"]],"356":[["cFALL_2022_NOEVOLVE","ns"]],"359":[["cFALL_2022_NOEVOLVE","ns"]],"363":[["cHOLIDAY_2021_NOEVOLVE","ns"]],"387":[["cGEMS_1_2021_NOEVOLVE","ns"],["cGEMS_2_2021_NOEVOLVE","ns"]],"390":[["cGEMS_1_2021_NOEVOLVE","ns"],["cGEMS_2_2021_NOEVOLVE","ns"]],"393":[["cGEMS_1_2021_NOEVOLVE","ns"],["cGEMS_2_2021_NOEVOLVE","ns"],["cHALLOWEEN_2021_NOEVOLVE","ns"]],"403":[["cFALL_2020_NOEVOLVE","nsgG"]],"426":[["cHALLOWEEN_2021_NOEVOLVE","ns"]],"427":[["cAPRIL_2020_NOEVOLVE","ns"]],"428":[["cAPRIL_2020_NOEVOLVE","ns"]],"440":[["cNOVEMBER_2018","ns"]],"453":[["cFALL_2020_NOEVOLVE","nsgG"]],"454":[["cFALL_2020_NOEVOLVE","nsgG"]],"466":[["cSPRING_2023_INSTINCT","ns"]],"468":[["cAPRIL_2020_NOEVOLVE","ns"]],"470":[["cHOLIDAY_2022","ns"],["cMAY_2023","ns"],["cNOVEMBER_2018","ns"],["cSPRING_2023","ns"]],"471":[["cHOLIDAY_2021_NOEVOLVE","ns"],["cHOLIDAY_2022","ns"],["cMAY_2023","ns"],["cNOVEMBER_2018","ns"],["cSPRING_2023","ns"]],"477":[["cFALL_2022_NOEVOLVE","ns"]],"522":[["cFASHION_2021_NOEVOLVE","ns"]],"546":[["cSPRING_2024","ns"]],"547":[["cSPRING_2024","ns"]],"572":[["cFASHION_2025","ns"]],"573":[["cFASHION_2025","ns"]],"656":[["cFALL_2024","ns"]],"657":[["cFALL_2024","ns"]],"658":[["cFALL_2024","ns"]],"700":[["cHOLIDAY_2022","ns"],["cMAY_2023","ns"],["cNOVEMBER_2018","ns"],["cSPRING_2023","ns"]],"702":[["cWINTER_2024","ns"]],"710":[["fAVERAGE.cFALL_2022","ns"],["fLARGE.cFALL_2022","ns"],["fSMALL.cFALL_2022","ns"],["fSUPER.cFALL_2022","ns"]],"711":[["fAVERAGE.cFALL_2022","ns"],["fLARGE.cFALL_2022","ns"],["fSMALL.cFALL_2022","ns"],["fSUPER.cFALL_2022","ns"]],"714":[["cHALLOWEEN_2025","ns"]],"715":[["cHALLOWEEN_2025","ns"]],"722":[["cFALL_2024","ns"]],"723":[["cFALL_2024","ns"]],"724":[["cFALL_2024","ns"]],"831":[["cWINTER_2024","ns"]],"832":[["cWINTER_2024","ns"]],"901":[["cHALLOWEEN_2025","ns"]],"907":[["cHORIZONS_2025_NOEVOLVE","ns"]]};
+const BGS = ["lc_2025_kr_pyeongchangWinterFestival","lc_2026_BR_001","lc_2026_ComicCon_Malaga","lc_2026_NPB_belluna","lc_2026_NPB_chunichiDragons","lc_2026_NPB_hiroshimaCarp","lc_2026_NPB_hokkaidoFighters","lc_2026_NPB_koshienHanshinTigers","lc_2026_NPB_kyocera","lc_2026_NPB_rakutenEagles","lc_2026_NPB_softbankHawks","lc_2026_NPB_tokyoSwallows","lc_2026_NPB_toyamaAllstars","lc_2026_NPB_yokohamaStadium","lc_2026_NPB_yomiuriGiants","lc_2026_NPB_zozoMarine","lc_2026_gowa_mexicocity","lc_2026_gowa_sendai","lc_2026_jp_green","lc_2026_jp_red","lc_2026_ppk_001","lc_AirAdv2024_bali","lc_AirAdv2024_jakarta","lc_AirAdv2024_surabaya","lc_AirAdv2024_yogyakarta","lc_CR_2026_001","lc_CherryBlossomFest2025_yeouido","lc_CitySafari2023_barcelona_2023","lc_CitySafari2023_mexicoCity_2023","lc_CitySafari2023_seoul_2023","lc_CitySafari2024_hongkong","lc_CitySafari2024_incheon","lc_CitySafari2024_milan","lc_CitySafari2024_mumbai","lc_CitySafari2024_santiago","lc_CitySafari2024_saopaulo","lc_CitySafari2024_singapore","lc_CitySafari2024_tainan","lc_CitySafari2025_amsterdam","lc_CitySafari2025_bangkok","lc_CitySafari2025_buenosAires","lc_CitySafari2025_cancun","lc_CitySafari2025_miami","lc_CitySafari2025_sydney","lc_CitySafari2025_valencia","lc_CitySafari2025_vancouver","lc_CitySafari2026_boston","lc_CitySafari2026_brisbane","lc_CitySafari2026_lisbon","lc_CitySafari2026_marseille","lc_CitySafari2026_munich","lc_CitySafari2026_rio","lc_ESA_citeDeEspace","lc_ESA_ciudadDeLasArtes","lc_ESA_euroSpaceCenter","lc_ESA_scienceMuseumLondon","lc_ESA_spaceCenterGermany","lc_ESA_spaceExpoNL","lc_GOWA_fukuoka","lc_GoFest2023_london","lc_GoFest2023_newyork","lc_GoFest2023_osaka","lc_GoFest2024_madrid","lc_GoFest2024_newyork","lc_GoFest2024_sendai","lc_GoFest2025_jerseycity","lc_GoFest2025_osaka","lc_GoFest2025_paris","lc_GoFest2026_chicago","lc_GoFest2026_copenhagen","lc_GoFest2026_tokyo","lc_GoTour2023","lc_GoTour2024_losAngeles","lc_GoTour2025_losAngeles","lc_GoTour2025_newTaipeiCity","lc_GoTour2026_losAngeles","lc_GoTour2026_tainan","lc_ID_CarFreeDay","lc_Jangheung_Water_Festival_2025","lc_JejuAirAdv2023","lc_LotteGiants","lc_MLB_arizonaDiamondbacks","lc_MLB_baltimoreOrioles","lc_MLB_bostonRedSox","lc_MLB_chicagoWhitesox","lc_MLB_clevelandGuardians","lc_MLB_mariners","lc_MLB_marlins","lc_MLB_milwaukeeBrewers","lc_MLB_minnesotaTwins","lc_MLB_newyorkMets","lc_MLB_sanFranciscoGiants","lc_MLB_tampaBayRays","lc_MLB_tampaBayRays2","lc_MLB_texasRangers","lc_MLB_washingtonNationals","lc_NFL_cardinals","lc_NFL_cardinals_2026","lc_OsakaEvent2025_01","lc_OsakaEvent2025_02","lc_OsakaEvent2025_03","lc_Paris2025_01","lc_Paris2025_02","lc_TokMun_koto","lc_TokMun_minato","lc_TokMun_shinagawa","lc_Wcs2024_honolulu","lc_Wcs2025_anaheim","lc_Wcs2026_sanFrancisco","lc_busanFireworksFestival_2025","lc_carnivalFlamigo_cologne_2026","lc_carnivalFlamigo_rio_2026","lc_fc2026_seoul","lc_nagasaki2025","lc_nationalTrust_angleseyAbbey","lc_nationalTrust_attinghampark","lc_nationalTrust_beltonHouse","lc_nationalTrust_calkeAbbey","lc_nationalTrust_chirk","lc_nationalTrust_cliveden","lc_nationalTrust_clumberPark","lc_nationalTrust_dunhamMassey","lc_nationalTrust_fountainsAbbeyEstate","lc_nationalTrust_gibslide","lc_nationalTrust_hanbury","lc_nationalTrust_hardwick","lc_nationalTrust_killerton","lc_nationalTrust_kingstonLacy","lc_nationalTrust_lacock","lc_nationalTrust_lymePark","lc_nationalTrust_mottisfont","lc_nationalTrust_mountStewart","lc_nationalTrust_nymans","lc_nationalTrust_polesden","lc_nationalTrust_scotneyCastle","lc_nationalTrust_stourhead","lc_nationalTrust_stoweGardenPark","lc_nationalTrust_tredegarHouse","lc_nationalTrust_trelissick","lc_nationalTrust_tyntesfield","lc_nationalTrust_whimpole","lc_nightOut2026_LA","lc_nightOut2026_London","lc_pokecenter_GOLab","lc_pokecenter_fukuoka","lc_pokecenter_hiroshima","lc_pokecenter_kagawa","lc_pokecenter_kanazawa","lc_pokecenter_kyoto","lc_pokecenter_megaTokyo","lc_pokecenter_nagoya","lc_pokecenter_okinawa","lc_pokecenter_osaka","lc_pokecenter_osakaDX","lc_pokecenter_sapporo","lc_pokecenter_shibuya","lc_pokecenter_skytreeTown","lc_pokecenter_tohoku","lc_pokecenter_tokyoBay","lc_pokecenter_tokyoDX","lc_pokecenter_yokohama","lc_pokelid_aichi","lc_pokelid_akita","lc_pokelid_aomori","lc_pokelid_chiba","lc_pokelid_ehime","lc_pokelid_fukui","lc_pokelid_fukuoka","lc_pokelid_fukushima","lc_pokelid_gifu","lc_pokelid_hokkaido","lc_pokelid_hyogo","lc_pokelid_ibaraki","lc_pokelid_ishikawa","lc_pokelid_iwate","lc_pokelid_kagawa","lc_pokelid_kagoshima","lc_pokelid_kanagawa","lc_pokelid_kochi","lc_pokelid_kyoto","lc_pokelid_mie","lc_pokelid_miyagi","lc_pokelid_miyazaki","lc_pokelid_nagano","lc_pokelid_nagasaki","lc_pokelid_nara","lc_pokelid_niigata","lc_pokelid_okayama","lc_pokelid_okinawa","lc_pokelid_osaka","lc_pokelid_saga","lc_pokelid_saitama","lc_pokelid_shiga","lc_pokelid_shimane","lc_pokelid_shizuoka","lc_pokelid_tochigi","lc_pokelid_tokushima","lc_pokelid_tokyo","lc_pokelid_tottori","lc_pokelid_toyama","lc_pokelid_wakayama","lc_pokelid_yamagata","lc_pokelid_yamaguchi","lc_pokopia2026","lc_roadtrip2025_berlin","lc_roadtrip2025_cologne","lc_roadtrip2025_hague","lc_roadtrip2025_london","lc_roadtrip2025_manchester","lc_roadtrip2025_paris","lc_roadtrip2025_valencia","lc_stampRally2025_Jeju","lc_taipeiAmusementPark_2025","lc_taipeiFlowerFestival_2026","lc_tpc30th_malaysia","lc_tpc30th_philippines","lc_tpc30th_singapore","lc_tpc30th_taiwan","sb_2024_decemberCdRecap","sb_9thAnniversary","sb_Community_2026","sb_Concierge2025","sb_DiaDeMuertos_2026","sb_FestivalofColors_2026","sb_GOWA2025_Global","sb_GOWA_fukuoka","sb_GoFest2024_radiance","sb_GoFest2024_umbra","sb_GoFest2024_wormhole","sb_GoFest2024_wormhole_moon","sb_GoFest2024_wormhole_sun","sb_GoFest2025","sb_GoFest2025_Eternatus","sb_GoFest2026_global","sb_GoFest2026_mewtwo","sb_GoTour2025_black","sb_GoTour2025_black_white","sb_GoTour2025_enigma","sb_GoTour2025_white","sb_GoTour2026_diamond","sb_GoTour2026_gold","sb_GoTour2026_mega","sb_GoTour2026_pearl","sb_GoTour2026_ruby","sb_GoTour2026_sapphire","sb_GoTour2026_silver","sb_GoTour2026_x","sb_GoTour2026_y","sb_MidAutumn","sb_ObservatoryExhibitionTour","sb_PatternWild","sb_Season17_DuelDestiny","sb_Season18_MightAndMastery","sb_Season19_DelightfulDays","sb_Season20_TalesOfTransformation","sb_TeamLeader_blue","sb_TeamLeader_red","sb_TeamLeader_yellow","sb_WorldSpecial_Blue","sb_arraia_2026","sb_black","sb_lego_2026","sb_s24_sep_2026"];
+function costumeUrl(dex, v, shiny, female){
+  const e = (COSTUMES[dex] || []).find(x => x[0] === v); if (!e) return '';
+  const fl = e[1];
+  let suf = '';
+  if (shiny && female && fl.includes('G')) suf = '.g2.s';
+  else if (shiny && fl.includes('s')) suf = '.s';
+  else if (female && fl.includes('g')) suf = '.g2';
+  else if (!fl.includes('n')) suf = fl.includes('s') ? '.s' : '.g2';
+  return `${PM_BASE}Pokemon%20-%20256x256/Addressable%20Assets/pm${dex}.${v}${suf}.icon.png`;
+}
+const COS_WORDS = { JAN: 'Januar', FEB: 'Februar', APRIL: 'April', MAY: 'Mai', NOVEMBER: 'November', SPRING: 'Frühling', SUMMER: 'Sommer', FALL: 'Herbst', WINTER: 'Winter', HOLIDAY: 'Weihnachten', HALLOWEEN: 'Halloween', ANNIVERSARY: 'Jubiläum', ONE: 'Erstes', YEAR: 'Jahr', FASHION: 'Fashion', GOFEST: 'GO Fest', GOTOUR: 'GO Tour', GEMS: 'Edelsteine', COSTUME: 'Kostüm', GALARIAN: 'Galar', AVERAGE: 'M', SMALL: 'S', LARGE: 'L', SUPER: 'XL' };
+const costumeLabel = v => v.replace(/_NOEVOLVE/g, '').split('.').map(part => part.slice(1).split('_').map(w => COS_WORDS[w] || (w.length > 3 ? w[0] + w.slice(1).toLowerCase() : w)).join(' ')).reverse().join(' · ');
+const bgUrl = k => `${PM_BASE}LocationCards/${k}.png`;
+const bgLabel = k => k.replace(/^(lc|sb)_/, '').replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Za-z])(\d{4})/g, '$1 $2').replace(/(\d{4})([A-Za-z])/g, '$1 $2')
+  .split(' ').filter(Boolean).map(w => /^go$/i.test(w) ? 'GO' : w[0].toUpperCase() + w.slice(1)).join(' ');
+const bgYear = k => +((k.match(/20\d\d/) || ['0'])[0]);
+const BGS_SORTED = BGS.slice().sort((a, b) => bgYear(b) - bgYear(a) || bgLabel(a).localeCompare(bgLabel(b), 'de'));
+// Gigadynamax-Bild (PokéAPI HOME) passend zur Form, falls vorhanden
+function gmaxKey(p){
+  const g = (FORMDATA[p.dex] || []).filter(t => t[1].includes('gmax'));
+  if (!g.length) return null;
+  const ft = findForm(p.dex, p.form);
+  const t = (ft && g.find(t => t[1].startsWith(ft[1]))) || g[0];
+  return typeof t[2] === 'number' ? t[2] : `${p.dex}-${t[2]}`;
+}
+// Bildquellen in Reihenfolge: Kostüm → Form/Gigadynamax → Grundbild
+function picSources(p){
+  const l = [];
+  if (p.costumeKey){ const u = costumeUrl(p.dex, p.costumeKey, p.shiny, p.gender === 'f'); if (u) l.push(u); }
+  l.push(monSprite(p), sprite(p.dex, p.shiny));
+  return [...new Set(l.filter(Boolean))];
+}
+window.nextPic = img => { const a = (img.dataset.alt || '').split('|').filter(Boolean); if (a.length){ img.src = a.shift(); img.dataset.alt = a.join('|'); } else img.style.visibility = 'hidden'; };
+function monPic(p){
+  const src = picSources(p);
+  const bg = p.bgKey ? `<img class="picbg" loading="lazy" src="${bgUrl(p.bgKey)}" alt="" onerror="this.remove()">` : '';
+  return `<div class="pic${p.bgKey ? ' hasbg' : ''}${p.dyna ? ' dmx' : ''}">${bg}<img class="picmon" loading="lazy" src="${src[0] || ''}" data-alt="${src.slice(1).join('|')}" alt="" onerror="nextPic(this)"></div>`;
+}
 const nameOf = id => DEX[id]?.de || DEX[id]?.en || '';
 
 /* ===================== Vivillon ===================== */
@@ -584,7 +641,7 @@ function monCard(p){
   if (p.form && !/^normal$/i.test(p.form)) b.unshift(`<span class="bd fm" title="${esc(ft ? ft[0] : p.form)}">◆ ${esc(p.form)}</span>`);
   return `<div class="card mon" data-id="${p.id}">
     ${p.fav ? '<span class="fav">★</span>' : ''}
-    <img loading="lazy" src="${monSprite(p)}" alt="" onerror="${imgFallback(p)}">
+    ${monPic(p)}
     <div class="nm">${esc(p.nick || p.name || '?')}${p.nick ? ` <span class="muted" style="font-weight:400">(${esc(p.name)})</span>` : ''}</div>
     <div class="sub">${esc(sub)}</div>
     <div class="ivrow"><span>WP <b class="ivp">${p.cp ?? '–'}</b></span><span>Lv ${p.level ?? '–'}</span><span>${iv == null ? 'IV –' : `<b class="ivp">${iv} %</b>`}</span></div>
@@ -598,7 +655,7 @@ function editMon(p){
   const o = (v, l, cur) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${l}</option>`;
   openDlg(isNew ? 'Pokémon hinzufügen' : 'Pokémon bearbeiten', `
     <div class="row" style="align-items:flex-start;margin-bottom:10px">
-      <img id="pv" src="${monSprite(p)}" style="width:80px;height:80px;object-fit:contain" onerror="if(this.dataset.base&&this.src!==this.dataset.base){this.src=this.dataset.base}else this.style.visibility='hidden'" onload="this.style.visibility='visible'">
+      <div id="pvWrap" style="flex:none">${monPic(p)}</div>
       <div class="fg sp">
         <label>Pokémon<input name="name" list="dlSpecies" value="${esc(p.name)}" required autocomplete="off"></label>
         <label>Dex-Nr.<input name="dex" type="number" min="1" max="1100" value="${p.dex ?? ''}"></label>
@@ -636,6 +693,17 @@ function editMon(p){
       <label class="chk"><input type="checkbox" name="lucky" ${p.lucky ? 'checked' : ''}> Glücks</label>
       <label class="chk"><input type="checkbox" name="fav" ${p.fav ? 'checked' : ''}> ★ Favorit</label>
     </div>
+    <input type="hidden" name="costumeKey" value="${esc(p.costumeKey || '')}">
+    <input type="hidden" name="bgKey" value="${esc(p.bgKey || '')}">
+    <div class="row" style="margin-top:10px">
+      <button type="button" class="b s" id="cosBtn">🎩 Kostüm-Bild wählen</button><span class="note" id="cosCur"></span>
+      <button type="button" class="b s" id="bgBtn">🖼 Hintergrund-Bild wählen</button><span class="note" id="bgCur"></span>
+    </div>
+    <div id="cosPick" class="picker" hidden></div>
+    <div id="bgPick" class="picker" hidden>
+      <div class="row"><input id="bgQ" placeholder="Suchen, z. B. GO Fest 2025, Tour, Safari" style="flex:1;min-width:140px"><select id="bgT"><option value="">Alle</option><option value="sb_">Spezial</option><option value="lc_">Ort</option></select></div>
+      <div id="bgList" class="pgrid"></div>
+    </div>
     <div class="sec">Herkunft</div>
     <div class="fg">
       <label>Gefangen am<input name="caught" type="date" value="${p.caught || ''}"></label>
@@ -654,18 +722,53 @@ function editMon(p){
         ivA: num(fd.get('ivA')), ivD: num(fd.get('ivD')), ivH: num(fd.get('ivH')),
         fast: fd.get('fast').trim(), c1: fd.get('c1').trim(), c2: fd.get('c2').trim(),
         costume: fd.get('costume').trim(), form: fd.get('form').trim(), gender: fd.get('gender'),
-        align: fd.get('align'), dyna: fd.get('dyna'), size: fd.get('size'), bg: fd.get('bg'), bgName: fd.get('bg') ? fd.get('bgName').trim() : '', viv: [664, 665, 666].includes(num(fd.get('dex'))) ? fd.get('viv') : '',
+        align: fd.get('align'), dyna: fd.get('dyna'), size: fd.get('size'), bg: fd.get('bg'), bgName: fd.get('bg') ? fd.get('bgName').trim() : '',
+        bgKey: fd.get('bg') && BGS.includes(fd.get('bgKey')) ? fd.get('bgKey') : '',
+        costumeKey: (COSTUMES[num(fd.get('dex'))] || []).some(x => x[0] === fd.get('costumeKey')) ? fd.get('costumeKey') : '', viv: [664, 665, 666].includes(num(fd.get('dex'))) ? fd.get('viv') : '',
         shiny: !!fd.get('shiny'), specialMove: !!fd.get('specialMove'), lucky: !!fd.get('lucky'), fav: !!fd.get('fav'),
         caught: fd.get('caught'), height: num(fd.get('height')), weight: num(fd.get('weight')), location: fd.get('location').trim(), tags: fd.get('tags').trim(), notes: fd.get('notes')
       });
       if (isNew) S.pokemon.push(p); save(); render();
     });
-  const f = dlgForm, pv = document.getElementById('pv');
+  const f = dlgForm, pvWrap = document.getElementById('pvWrap');
+  const cosPick = document.getElementById('cosPick'), bgPick = document.getElementById('bgPick'), bgList = document.getElementById('bgList');
+  const renderCos = () => {
+    const id = num(f.dex.value), list = COSTUMES[id] || [], cur = f.costumeKey.value;
+    cosPick.innerHTML = list.length
+      ? `<div class="pgrid"><button type="button" class="pitem ${cur ? '' : 'on'}" data-cos=""><div class="none">✕</div>Kein Bild</button>${list.map(([v]) => `<button type="button" class="pitem pcos ${cur === v ? 'on' : ''}" data-cos="${v}"><img loading="lazy" src="${costumeUrl(id, v, f.shiny.checked, f.gender.value === 'f')}" alt="">${esc(costumeLabel(v))}</button>`).join('')}</div>`
+      : '<p class="note" style="margin:4px">Für dieses Pokémon gibt es keine Kostüm-Bilder – das Kostüm erscheint weiter als Tag.</p>';
+    cosPick.querySelectorAll('[data-cos]').forEach(b => b.onclick = () => {
+      const old = f.costumeKey.value; f.costumeKey.value = b.dataset.cos;
+      if (b.dataset.cos && (!f.costume.value.trim() || (old && f.costume.value === costumeLabel(old)))) f.costume.value = costumeLabel(b.dataset.cos);
+      renderCos(); upd();
+    });
+  };
+  const renderBg = () => {
+    const q = document.getElementById('bgQ').value.trim().toLowerCase(), t = document.getElementById('bgT').value, cur = f.bgKey.value;
+    const list = BGS_SORTED.filter(k => (!t || k.startsWith(t)) && (!q || q.split(/\s+/).every(w => (bgLabel(k) + ' ' + k).toLowerCase().includes(w))));
+    bgList.innerHTML = `<button type="button" class="pitem ${cur ? '' : 'on'}" data-bgk=""><div class="none">✕</div>Kein Bild</button>` + list.map(k => `<button type="button" class="pitem ${cur === k ? 'on' : ''}" data-bgk="${k}" title="${esc(bgLabel(k))}"><img loading="lazy" src="${bgUrl(k)}" alt="">${k.startsWith('sb_') ? '★ ' : ''}${esc(bgLabel(k))}</button>`).join('');
+    bgList.querySelectorAll('[data-bgk]').forEach(b => b.onclick = () => {
+      const k = b.dataset.bgk, old = f.bgKey.value; f.bgKey.value = k;
+      if (k){
+        f.bg.value = k.startsWith('sb_') ? 'special' : 'location';
+        if (!f.bgName.value.trim() || (old && f.bgName.value === bgLabel(old))) f.bgName.value = bgLabel(k);
+      }
+      renderBg(); upd();
+    });
+  };
+  document.getElementById('cosBtn').onclick = () => { cosPick.hidden = !cosPick.hidden; if (!cosPick.hidden) renderCos(); };
+  document.getElementById('bgBtn').onclick = () => { bgPick.hidden = !bgPick.hidden; if (!bgPick.hidden) renderBg(); };
+  document.getElementById('bgQ').oninput = renderBg; document.getElementById('bgT').onchange = renderBg;
+  f.bg.addEventListener('change', () => { if (!f.bg.value){ f.bgKey.value = ''; if (!bgPick.hidden) renderBg(); } upd(); });
+  f.dyna.addEventListener('change', () => upd()); f.gender.addEventListener('change', () => { if (!cosPick.hidden) renderCos(); upd(); });
   const upd = () => {
     const id = num(f.dex.value);
-    const q = { dex: id, form: f.form.value, viv: id === 666 ? f.viv.value : '', shiny: f.shiny.checked };
-    pv.dataset.base = sprite(id, q.shiny);
-    pv.src = monSprite(q);
+    if (f.costumeKey.value && !(COSTUMES[id] || []).some(x => x[0] === f.costumeKey.value)) f.costumeKey.value = '';
+    const q = { dex: id, form: f.form.value, viv: id === 666 ? f.viv.value : '', shiny: f.shiny.checked, gender: f.gender.value, dyna: f.dyna.value, costumeKey: f.costumeKey.value, bgKey: f.bg.value ? f.bgKey.value : '' };
+    pvWrap.innerHTML = monPic(q);
+    document.getElementById('cosCur').textContent = f.costumeKey.value ? '✓ ' + costumeLabel(f.costumeKey.value) : (COSTUMES[id] || []).length ? `${COSTUMES[id].length} verfügbar` : '';
+    document.getElementById('bgCur').textContent = q.bgKey ? '✓ ' + bgLabel(q.bgKey) : '';
+    if (!cosPick.hidden) renderCos();
     document.getElementById('vivWrap').style.display = [664, 665, 666].includes(id) ? '' : 'none';
     document.getElementById('dlForms').innerHTML = (FORMDATA[id] || []).filter(t => t[0]).map(t => `<option value="${esc(t[0])}">`).join('');
     const ft = findForm(id, q.form);

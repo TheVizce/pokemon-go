@@ -4,6 +4,8 @@
 - IndexedDB `pokemon-go-tool`, localStorage-Präfix `go-organizer`.
 - Sync: Datei `pokemon-go.json`. `collections: pokemon, friends, postcards (array), regionHints (map)`, Feld `xpDigits`.
 - `SYNC.changed()` steckt in `save()`. `apply` übernimmt in `S` und ruft `save()`.
+- Bilder werden nur verlinkt, nicht ins Repo kopiert: PokéAPI-HOME-Sprites (Formen, Gigadynamax) und PokeMiners/pogo_assets (Kostüme `Images/Pokemon - 256x256`, Hintergründe `Images/LocationCards`). Listen `FORMDATA`, `COSTUMES`, `BGS` sind in `index.html` eingebettet; bei neuen Events neu erzeugen.
+- Pokémon-Felder für Bilder: `costumeKey` (z. B. `cJAN_2020_NOEVOLVE`), `bgKey` (z. B. `sb_GoFest2025`). Freitext `costume`/`bgName` bleibt als Fallback.
 
 ## Gemeinsame Regeln für alle Tools unter thevizce.github.io
 
