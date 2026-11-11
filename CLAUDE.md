@@ -2,7 +2,9 @@
 
 ## Dieses Tool
 - IndexedDB `pokemon-go-tool`, localStorage-Präfix `go-organizer`.
-- Sync: Datei `pokemon-go.json`. `collections: pokemon, friends, postcards (array), regionHints (map)`, Feld `xpDigits`.
+- Sync: Ordner `pokemon-go/` mit `shards: 16` (main.json + s00–s15.json, seit 11.11.2026; die Zahl nie ändern). Die alte `pokemon-go.json` im Daten-Repo wird nicht mehr benutzt. `collections: pokemon, friends, postcards (array), regionHints (map)`, Feld `xpDigits`.
+- Ohne IndexedDB nur Ansicht + JSON-Export (kein Ausweichen in den gemeinsamen localStorage).
+- Freunde: Resttage nur über „Prüfen“; Prüfintervall gestaffelt nach Status (`CHECK_AFTER`). Poke-Genie-Import löscht Pokémon mit eigenen Angaben nie, sondern markiert sie (`pgMissing`); eigene Formänderungen bleiben (`pgForm`).
 - `SYNC.changed()` steckt in `save()`. `apply` übernimmt in `S` und ruft `save()`.
 - Bilder werden nur verlinkt, nicht ins Repo kopiert: PokéAPI-HOME-Sprites (Formen, Gigadynamax) und PokeMiners/pogo_assets (Kostüme `Images/Pokemon - 256x256`, Hintergründe `Images/LocationCards`). Listen `FORMDATA`, `COSTUMES`, `BGS` sind in `index.html` eingebettet; bei neuen Events neu erzeugen.
 - Pokémon-Felder für Bilder: `costumeKey` (z. B. `cJAN_2020_NOEVOLVE`), `bgKey` (z. B. `sb_GoFest2025`). Freitext `costume`/`bgName` bleibt als Fallback.

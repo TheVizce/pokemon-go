@@ -436,7 +436,10 @@ const FT = [0, 1, 7, 30, 90, 180];
 const MAXLVL = FL.length - 1;
 const spanOf = lvl => lvl >= MAXLVL ? null : FT[lvl + 1] - FT[lvl];
 const unitOf = (lvl, n) => lvl === 4 ? (n === 1 ? 'Punkt' : 'Punkte') : (n === 1 ? 'Tag' : 'Tage');
-const CHECK_DUE = 14;   // Tage, nach denen eine erneute Prüfung fällig ist
+// Tage bis zur nächsten Prüfung, gestaffelt nach Status: Inaktiv? 7 · Ruhig 14 · Aktiv 30 · Unklar 14 · Nicht bewertbar 30
+const CHECK_AFTER = { no: 7, lo: 14, ok: 30, uk: 14, na: 30 };
+const addDays = (d, n) => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
+const withDue = (a, c) => { a.nextCheck = addDays(c, CHECK_AFTER[a.key || a.cls]); a.due = a.nextCheck <= today(); return a; };
 // EP werden nur mit den letzten 4 Ziffern notiert und verglichen (volle Zahlen werden gekürzt)
 const XP_DIGITS = 4, XP_MOD = 10 ** XP_DIGITS;
 const xpS = v => (v == null || v === '' || isNaN(+v)) ? null : Math.abs(Math.round(+v)) % XP_MOD;
@@ -476,11 +479,11 @@ function friendProgress(f){
 // Prüfstatus: wie lange hatte sich zum Zeitpunkt der letzten Prüfung nichts mehr geändert?
 function activity(f){
   const c = f.lastCheck;
-  if (!c) return { cls: 'uk', txt: 'Nie geprüft', detail: '', due: true, checkAge: null, stale: null };
+  if (!c) return { cls: 'uk', txt: 'Nie geprüft', detail: '', due: true, nextCheck: '', checkAge: null, stale: null };
   const checkAge = daysBetween(c, today());
   const lv80 = (f.trainerLvl || 0) >= 80;
   // Lv 80: EP ändern sich nicht mehr; Allerbester Freund: kein weiteres Level. Beides zusammen = nicht messbar.
-  if (lv80 && (f.level || 0) >= MAXLVL) return { cls: 'uk', txt: 'Nicht bewertbar', detail: 'Lv 80 und Allerbester Freund – über EP und Freundschaft nicht messbar', due: checkAge >= CHECK_DUE, checkAge, stale: null };
+  if (lv80 && (f.level || 0) >= MAXLVL) return withDue({ cls: 'uk', key: 'na', txt: 'Nicht bewertbar', detail: 'Lv 80 und Allerbester Freund – über EP und Freundschaft nicht messbar', checkAge, stale: null }, c);
   // Bei Lv 80 zählt nur die Freundschaft
   const lastChange = (lv80 ? [f.friendChanged] : [f.xpChanged, f.friendChanged]).filter(Boolean).sort().pop();
   const stale = lastChange ? Math.max(0, daysBetween(lastChange, c)) : null;
@@ -491,7 +494,7 @@ function activity(f){
     else { cls = 'no'; txt = 'Inaktiv?'; }
   }
   const detail = stale == null ? '' : stale === 0 ? 'Änderung am Prüftag' : `${stale} T ohne Änderung bis zur Prüfung`;
-  return { cls, txt, detail, due: checkAge >= CHECK_DUE, checkAge, stale };
+  return withDue({ cls, txt, detail, checkAge, stale }, c);
 }
 // Alte Freunde (Version mit f.days) auf Resttage umstellen
 function migrateFriends(){
@@ -503,8 +506,8 @@ function migrateFriends(){
       f.leftDate = f.last || today();
       delete f.days; ch = true;
     }
-    // Reste des entfernten „Heute interagiert“-Zählers
-    for (const k of ['prevState', 'prevLast', 'last']) if (k in f){ delete f[k]; ch = true; }
+    // Reste der entfernten Knöpfe „Heute interagiert“ und „Geschenk“
+    for (const k of ['prevState', 'prevLast', 'last', 'giftSent']) if (k in f){ delete f[k]; ch = true; }
   }
   return ch;
 }
@@ -790,7 +793,7 @@ function renderFriends(){
   const so = {
     level: (a, b) => (b.level || 0) - (a.level || 0) || (friendProgress(a).left ?? 999) - (friendProgress(b).left ?? 999),
     next: (a, b) => (friendProgress(a).left ?? 999) - (friendProgress(b).left ?? 999),
-    check: (a, b) => (a.lastCheck || '').localeCompare(b.lastCheck || ''),
+    check: (a, b) => (A.get(a.id).nextCheck || '').localeCompare(A.get(b.id).nextCheck || ''),
     stale: (a, b) => (A.get(b.id).stale ?? -1) - (A.get(a.id).stale ?? -1),
     name: (a, b) => a.name.localeCompare(b.name, 'de')
   }[FF.sort] || ((a, b) => a.name.localeCompare(b.name, 'de'));
@@ -806,16 +809,14 @@ function renderFriends(){
     </div>
     <div class="bar">
       <button class="b p" id="addF">+ Freund</button>
-      <button class="b" id="impF">Freunde importieren</button>
       <input id="fq" placeholder="Suchen (Name, Region, Code…)" value="${esc(FF.q)}" style="flex:1;min-width:160px">
       <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['lucky', 'Glücksfreunde'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
-      <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Am längsten nicht geprüft'], ['stale', 'Am längsten ohne Änderung'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Nächste Prüfung zuerst'], ['stale', 'Am längsten ohne Änderung'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map(f => friendCard(f, A.get(f.id))).join('')}</div>
       ${list.length > FF.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="moreF">Weitere ${Math.min(60, list.length - FF.lim)} anzeigen (${list.length - FF.lim} übrig)</button> <button class="b" id="allF">Alle anzeigen</button></div>` : ''}`
-      : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Freunde eingetragen – trag welche ein oder importiere sie.'}</div>`}`;
+      : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Freunde eingetragen – trag welche ein oder übernimm sie unter „Daten“.'}</div>`}`;
   addF.onclick = () => editFriend();
-  impF.onclick = openFriendImport;
   const mf = document.getElementById('moreF'); if (mf) mf.onclick = () => { FF.lim += 60; renderFriends(); };
   const af = document.getElementById('allF'); if (af) af.onclick = () => { FF.lim = 1e6; renderFriends(); };
   fq.oninput = e => { FF.q = e.target.value; FF.lim = 60; renderFriends(); const n = document.getElementById('fq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
@@ -828,7 +829,6 @@ function renderFriends(){
     if (a === 'edit') return editFriend(f);
     if (a === 'check') return checkFriend(f);
     if (a === 'card') return editCard(null, f.id);
-    if (a === 'gift'){ f.giftSent = f.giftSent === today() ? '' : today(); save(); renderFriends(); }
   });
 }
 function friendCard(f, ac){
@@ -851,11 +851,10 @@ function friendCard(f, ac){
     <div class="row" style="margin-top:10px">
       <span class="st ${ac.cls}">${ac.txt}</span>${ac.due ? '<span class="st lo">Prüfung fällig</span>' : ''}<span class="note sp">${ac.detail}</span>
     </div>
-    <div class="note" style="margin-top:4px">Geprüft ${short(f.lastCheck)}${ac.checkAge != null ? ` (vor ${ac.checkAge} T)` : ''} · EP geändert ${short(f.xpChanged)} · Freundschaft geändert ${short(f.friendChanged)}</div>
+    <div class="note" style="margin-top:4px">Geprüft ${short(f.lastCheck)}${ac.checkAge != null ? ` (vor ${ac.checkAge} T)` : ''}${ac.nextCheck ? ` · nächste Prüfung ${short(ac.nextCheck)}` : ''} · EP geändert ${short(f.xpChanged)} · Freundschaft geändert ${short(f.friendChanged)}</div>
     ${pats.length ? `<div class="note" style="margin-top:4px">Vivillon: ${pats.map(k => vivDot(k) + esc(VIVMAP[k]?.[1])).join(', ')}</div>` : ''}
     ${cards.length ? `<div class="note" style="margin-top:2px">${cards.length} Postkarte${cards.length === 1 ? '' : 'n'}</div>` : ''}
     <div class="row" style="margin-top:10px">
-      <button class="b s ${f.giftSent === t ? 'p' : ''}" data-act="gift" data-id="${f.id}">🎁 ${f.giftSent === t ? 'Gesendet' : 'Geschenk'}</button>
       <button class="b s ${ac.due ? 'p' : ''}" data-act="check" data-id="${f.id}">Prüfen</button>
       <button class="b s" data-act="card" data-id="${f.id}">+ Postkarte</button>
     </div>
@@ -1037,8 +1036,8 @@ function renderData(){
       <h3>Poke Genie</h3>
       <p class="note">CSV-Export aus Poke Genie einlesen. Erneute Importe aktualisieren bestehende Einträge, ohne deine eigenen Angaben zu überschreiben.</p>
       <button class="b" id="pgImp2">Poke Genie importieren</button>
-      <h3>Freunde</h3>
-      <p class="note">Freunde aus der vorbereiteten JSON-Datei oder einem Notion-CSV-Export übernehmen. Pokémon bleiben unverändert.</p>
+      <h3>Freunde aus Notion</h3>
+      <p class="note">Einmalige Übernahme aus der früheren Notion-Datenbank (vorbereitete JSON-Datei oder Notion-CSV-Export). Pokémon bleiben unverändert.</p>
       <button class="b" id="impF2">Freunde importieren</button>
       <h3>Statistik</h3>
       <p>${S.pokemon.length} Pokémon · ${S.friends.length} Freunde · ${S.postcards.length} Postkarten</p>
@@ -1291,12 +1290,13 @@ themeBtn.onclick = () => {
   const t = dark ? 'light' : 'dark'; applyTheme(t); try{ localStorage.setItem(TH, t); }catch(e){}
 };
 document.getElementById('main').innerHTML = '<div class="empty">Lade Daten…</div>';
-/* GitHub-Sync: gleicht mit tool-daten/pokemon-go.json ab, sobald auf der Startseite eingerichtet */
+/* GitHub-Sync: gleicht mit dem Ordner tool-daten/pokemon-go/ ab, sobald auf der Startseite eingerichtet */
 function initSync(){
   if (!window.ToolSync || STORE_MODE !== 'idb') return;
   SYNC = ToolSync.create({
     tool: 'pokemon-go',
     collections: { pokemon: 'array', friends: 'array', postcards: 'array', regionHints: 'map' },
+    shards: 16,   // Ordner pokemon-go/ (main.json + s00–s15.json); nur geänderte Teile werden hochgeladen. Zahl NIE ändern.
     fields: ['xpDigits'],
     get: () => S,
     apply: async d => { S = Object.assign(blank(), S, d); const ok = await save(); render(); return ok; }
