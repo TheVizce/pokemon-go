@@ -117,7 +117,6 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 <header>
   <div class="top">
     <h1 style="display:flex;align-items:center;gap:8px"><img src="icon.svg" alt="" width="28" height="28">GO Organizer</h1>
-    <span id="dbstate" class="note"></span>
     <button class="b s" id="themeBtn" title="Hell/Dunkel">◐</button>
   </div>
   <nav id="tabs">
@@ -151,7 +150,7 @@ const DB_NAME = 'pokemon-go-tool', DB_STORE = 'kv', DB_REC = 'state';
 const blank = () => ({ pokemon: [], friends: [], postcards: [], regionHints: {}, version: 1 });
 let S = blank();
 let SYNC = null;              // GitHub-Sync, siehe initSync()
-let STORE_MODE = 'idb';      // 'idb' | 'ls' (Notlösung, falls IndexedDB nicht verfügbar) | 'locked'
+let STORE_MODE = 'idb';      // 'idb' | 'readonly' (IndexedDB fehlt: nur lesen/exportieren) | 'locked'
 let PERSISTED = null;
 let db = null;
 
@@ -190,17 +189,18 @@ function storeBanner(msg){
     document.body.prepend(el);
   }
   el.innerHTML = `⚠️ ${esc(msg)} <button class="b s" id="storeErrExp" style="margin-left:8px">Jetzt als JSON sichern</button>`;
-  document.getElementById('storeErrExp').onclick = exportJSON;
+  document.getElementById('storeErrExp').onclick = () => exportJSON();
 }
 
 let saveChain = Promise.resolve(), pending = 0;
 function save(){
   if (STORE_MODE === 'locked'){ storeBanner('Gespeicherte Daten konnten nicht gelesen werden – Speichern ist gesperrt, damit nichts überschrieben wird. Seite neu laden oder Sicherung importieren.'); return Promise.resolve(false); }
+  // Ohne IndexedDB wird bewusst NICHT in den gemeinsamen localStorage ausgewichen (zu groß, würde andere Tools blockieren)
+  if (STORE_MODE !== 'idb'){ storeBanner('IndexedDB ist in diesem Browser nicht verfügbar – Änderungen können nicht gespeichert werden. Bitte als JSON sichern.'); return Promise.resolve(false); }
   const snap = plain(S); pending++;
   saveChain = saveChain.then(async () => {
     try{
-      if (STORE_MODE === 'idb') await idbPut(snap);
-      else localStorage.setItem(LEGACY_KEY, JSON.stringify(snap));
+      await idbPut(snap);
       storeBanner(''); if (SYNC) SYNC.changed(); return true;
     }catch(e){
       const quota = e && (e.name === 'QuotaExceededError' || /quota/i.test(e.message || ''));
@@ -240,22 +240,23 @@ async function initStore(){
     }
     S = Object.assign(blank(), data || {});
   }catch(e){
-    // Notlösung: weiter mit localStorage arbeiten, alten Schlüssel NICHT löschen
+    // IndexedDB fehlt: alte Daten aus dem localStorage nur anzeigen (zum Exportieren), nichts schreiben, nichts löschen
     console.warn(e);
-    STORE_MODE = 'ls';
+    STORE_MODE = 'readonly';
     try{ const raw = localStorage.getItem(LEGACY_KEY); S = Object.assign(blank(), raw ? JSON.parse(raw) : {}); }
     catch(err){ STORE_MODE = 'locked'; S = blank(); storeBanner('Gespeicherte Daten konnten nicht gelesen werden. Speichern ist gesperrt, damit nichts überschrieben wird.'); return; }
-    storeBanner(`IndexedDB nicht verfügbar (${e.message}) – es wird vorübergehend localStorage benutzt.`);
+    storeBanner(`IndexedDB nicht verfügbar (${e.message}) – nur Ansicht und JSON-Export möglich, Änderungen werden nicht gespeichert.`);
+    return;
   }
   try{ for (const k of ['go-organizer-dex', 'go-organizer-dex-v2']) localStorage.removeItem(k); }catch(e){}
   if (S.pokemon.some(p => 'pvp' in p)){ S.pokemon.forEach(p => delete p.pvp); save(); }
   if (migrateFriends() | migrateXpDigits()) save();
   try{ if (navigator.storage?.persist) PERSISTED = (await navigator.storage.persisted()) || (await navigator.storage.persist()); }catch(e){}
 }
-function exportJSON(){
+function exportJSON(suffix){
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], { type: 'application/json' }));
-  a.download = `go-organizer-${today()}.json`; a.click();
+  a.download = `go-organizer-${today()}${typeof suffix === 'string' ? '-' + suffix : ''}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 }
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -266,7 +267,7 @@ const fmtDate = d => d ? new Date(d + 'T12:00').toLocaleDateString('de-DE') : '�
 const num = v => (v === '' || v == null || isNaN(+v)) ? null : +v;
 const nf = n => n == null ? '–' : n.toLocaleString('de-DE');
 
-/* ===================== Pokédex (Namen via PokéAPI-CSV) ===================== */
+/* ===================== Pokédex (Namen fest eingebaut) ===================== */
 let DEX = {};          // id -> {de, en}
 let NAME2ID = {};      // lower name -> id
 // Namen fest eingebaut (Quelle: PokéAPI, Sprachen Deutsch/Englisch, #1–#1025)
@@ -276,15 +277,6 @@ function loadDex(){
   const de = DEX_DE.split('|'), en = DEX_EN.split('|'), d = {};
   de.forEach((n, i) => d[i + 1] = { de: n, en: en[i] });
   setDex(d);
-}
-function parseCSV(line){
-  const out = []; let cur = '', q = false;
-  for (let i = 0; i < line.length; i++){
-    const c = line[i];
-    if (q){ if (c === '"'){ if (line[i+1] === '"'){ cur += '"'; i++; } else q = false; } else cur += c; }
-    else if (c === '"') q = true; else if (c === ','){ out.push(cur); cur = ''; } else if (c !== '\r') cur += c;
-  }
-  out.push(cur); return out;
 }
 function setDex(d){
   DEX = d; NAME2ID = {};
@@ -296,7 +288,6 @@ function setDex(d){
     opts.push(`<option value="${esc(de)}">#${id} ${esc(de)}</option>`);
   }
   document.getElementById('dlSpecies').innerHTML = opts.join('');
-  document.getElementById('dbstate').textContent = '';
   // bereits gespeicherte Pokémon auf deutsche Namen umstellen
   let changed = false;
   for (const p of S.pokemon){
@@ -343,7 +334,6 @@ function monSpriteKey(p){
 }
 // Bild passend zu Form/Muster; fällt bei fehlender Datei auf das Grundbild zurück
 const monSprite = p => sprite(monSpriteKey(p), p.shiny);
-const imgFallback = p => monSpriteKey(p) === p.dex ? `this.style.visibility='hidden'` : `if(!this.dataset.fb){this.dataset.fb=1;this.src='${sprite(p.dex, p.shiny)}'}else this.style.visibility='hidden'`;
 
 /* Kostüme & Hintergründe: Originalgrafiken aus PokeMiners/pogo_assets, direkt von GitHub geladen (nicht im Repo) */
 const PM_BASE = 'https://raw.githubusercontent.com/PokeMiners/pogo_assets/master/Images/';
@@ -362,6 +352,7 @@ function costumeUrl(dex, v, shiny, female){
 }
 const COS_WORDS = { JAN: 'Januar', FEB: 'Februar', APRIL: 'April', MAY: 'Mai', NOVEMBER: 'November', SPRING: 'Frühling', SUMMER: 'Sommer', FALL: 'Herbst', WINTER: 'Winter', HOLIDAY: 'Weihnachten', HALLOWEEN: 'Halloween', ANNIVERSARY: 'Jubiläum', ONE: 'Erstes', YEAR: 'Jahr', FASHION: 'Fashion', GOFEST: 'GO Fest', GOTOUR: 'GO Tour', GEMS: 'Edelsteine', COSTUME: 'Kostüm', GALARIAN: 'Galar', AVERAGE: 'M', SMALL: 'S', LARGE: 'L', SUPER: 'XL' };
 const costumeLabel = v => v.replace(/_NOEVOLVE/g, '').split('.').map(part => part.slice(1).split('_').map(w => COS_WORDS[w] || (w.length > 3 ? w[0] + w.slice(1).toLowerCase() : w)).join(' ')).reverse().join(' · ');
+const COSTUME_LABELS = [...new Set(Object.values(COSTUMES).flat().map(([v]) => costumeLabel(v.replace(/^f[A-Z0-9_]+\./, ''))))];
 const bgUrl = k => `${PM_BASE}LocationCards/${k}.png`;
 const bgLabel = k => k.replace(/^(lc|sb)_/, '').replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/([A-Za-z])(\d{4})/g, '$1 $2').replace(/(\d{4})([A-Za-z])/g, '$1 $2')
   .split(' ').filter(Boolean).map(w => /^go$/i.test(w) ? 'GO' : w[0].toUpperCase() + w.slice(1)).join(' ');
@@ -487,7 +478,11 @@ function activity(f){
   const c = f.lastCheck;
   if (!c) return { cls: 'uk', txt: 'Nie geprüft', detail: '', due: true, checkAge: null, stale: null };
   const checkAge = daysBetween(c, today());
-  const lastChange = [f.xpChanged, f.friendChanged].filter(Boolean).sort().pop();
+  const lv80 = (f.trainerLvl || 0) >= 80;
+  // Lv 80: EP ändern sich nicht mehr; Allerbester Freund: kein weiteres Level. Beides zusammen = nicht messbar.
+  if (lv80 && (f.level || 0) >= MAXLVL) return { cls: 'uk', txt: 'Nicht bewertbar', detail: 'Lv 80 und Allerbester Freund – über EP und Freundschaft nicht messbar', due: checkAge >= CHECK_DUE, checkAge, stale: null };
+  // Bei Lv 80 zählt nur die Freundschaft
+  const lastChange = (lv80 ? [f.friendChanged] : [f.xpChanged, f.friendChanged]).filter(Boolean).sort().pop();
   const stale = lastChange ? Math.max(0, daysBetween(lastChange, c)) : null;
   let cls = 'uk', txt = 'Unklar';
   if (stale != null){
@@ -508,27 +503,10 @@ function migrateFriends(){
       f.leftDate = f.last || today();
       delete f.days; ch = true;
     }
+    // Reste des entfernten „Heute interagiert“-Zählers
+    for (const k of ['prevState', 'prevLast', 'last']) if (k in f){ delete f[k]; ch = true; }
   }
   return ch;
-}
-// „Heute interagiert“: Resttage um 1 senken, bei 0 ins nächste Level
-function interact(f, undo){
-  const lvl = f.level || 0;
-  if (undo){
-    const span = spanOf(lvl);
-    if (f.prevState){ Object.assign(f, f.prevState); delete f.prevState; }
-    else if (span != null) f.left = Math.min(span, (f.left ?? span) + 1);
-    f.last = f.prevLast || '';
-    return;
-  }
-  f.prevState = { level: f.level, left: f.left, leftDate: f.leftDate };
-  f.prevLast = f.last;
-  const span = spanOf(lvl);
-  if (span != null){
-    f.left = (f.left ?? span) - 1;
-    if (f.left <= 0 && lvl < MAXLVL){ f.level = lvl + 1; f.left = spanOf(lvl + 1); }
-  }
-  f.leftDate = today(); f.last = today();
 }
 
 /* ===================== Rendering ===================== */
@@ -543,7 +521,7 @@ function render(){
   ({ mons: renderMons, friends: renderFriends, cards: renderCards, viv: renderViv, data: renderData })[TAB]();
 }
 function refreshLists(){
-  const cos = new Set(['Partyhut','Weihnachtsmütze','Halloween-Kostüm','Neujahrshut','Blumenkrone','Sonnenbrille','Detektivmütze','Pikachu-Mütze','Fest-Krone','Ash-Mütze']);
+  const cos = new Set(COSTUME_LABELS);
   const moves = new Set(), bgs = new Set();
   S.pokemon.forEach(p => { if (p.costume) cos.add(p.costume); if (p.bgName) bgs.add(p.bgName); [p.fast, p.c1, p.c2].forEach(m => m && moves.add(m)); });
   document.getElementById('dlBg').innerHTML = [...bgs].sort().map(c => `<option value="${esc(c)}">`).join('');
@@ -571,7 +549,7 @@ function renderMons(){
   });
   const fl = F.flt;
   if (fl === 'shiny') list = list.filter(p => p.shiny);
-  if (fl === 'costume') list = list.filter(p => p.costume);
+  if (fl === 'costume') list = list.filter(p => p.costume || p.costumeKey);
   if (fl === 'shadow') list = list.filter(p => p.align === 'shadow');
   if (fl === 'purified') list = list.filter(p => p.align === 'purified');
   if (fl === 'lucky') list = list.filter(p => p.lucky);
@@ -579,8 +557,9 @@ function renderMons(){
   if (fl === 'fav') list = list.filter(p => p.fav);
   if (fl === 'dyna') list = list.filter(p => p.dyna);
   if (fl === 'move') list = list.filter(p => p.specialMove);
+  if (fl === 'pgmissing') list = list.filter(p => p.pgMissing);
   if (fl === 'form') list = list.filter(p => p.form && !/^normal$/i.test(p.form));
-  if (fl === 'bg') list = list.filter(p => p.bg);
+  if (fl === 'bg') list = list.filter(p => p.bg || p.bgKey);
   if (fl === 'bgspecial') list = list.filter(p => p.bg === 'special');
   if (fl === 'big') list = list.filter(p => p.size === 'XL' || p.size === 'XXL');
   if (fl === 'small') list = list.filter(p => p.size === 'XS' || p.size === 'XXS');
@@ -599,22 +578,20 @@ function renderMons(){
       <div class="card"><b>${all.length}</b><span class="muted">Pokémon</span></div>
       <div class="card"><b>${new Set(all.map(p => p.dex).filter(Boolean)).size}</b><span class="muted">Arten</span></div>
       <div class="card"><b>${all.filter(p => p.shiny).length}</b><span class="muted">Shiny</span></div>
-      <div class="card"><b>${all.filter(p => p.costume).length}</b><span class="muted">Kostüme</span></div>
+      <div class="card"><b>${all.filter(p => p.costume || p.costumeKey).length}</b><span class="muted">Kostüme</span></div>
       <div class="card"><b>${all.filter(p => ivPct(p) === 100).length}</b><span class="muted">100 %</span></div>
-      <div class="card"><b>${all.filter(p => p.bg).length}</b><span class="muted">Hintergründe</span></div>
+      <div class="card"><b>${all.filter(p => p.bg || p.bgKey).length}</b><span class="muted">Hintergründe</span></div>
       <div class="card"><b>${all.filter(p => p.size === 'XXL' || p.size === 'XXS').length}</b><span class="muted">XXL/XXS</span></div>
     </div>
     <div class="bar">
-      <button class="b p" id="addMon">+ Pokémon</button>
       <button class="b" id="pgImp">Poke Genie importieren</button>
       <input id="q" placeholder="Suchen, z. B. Evoli & Blitza & Flamara" title="Mehrere Suchbegriffe mit & , ; oder | trennen – angezeigt wird, was zu irgendeinem passt. Mit + verknüpfen, wenn alles zutreffen soll (z. B. Glurak + Luftschnitt). In Anführungszeichen = genauer Name (z. B. &quot;Mew&quot; ohne Mewtu)." value="${esc(F.q)}" style="flex:1;min-width:180px">
-      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['form', 'Mit Form'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['pgmissing', 'Nicht mehr im Export'], ['form', 'Mit Form'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="sort">${[['new', 'Neueste'], ['dex', 'Pokédex-Nr.'], ['cp', 'WP'], ['iv', 'IV'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid">${list.slice(0, F.lim).map(monCard).join('')}</div>
       ${list.length > F.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="more">Weitere ${Math.min(120, list.length - F.lim)} anzeigen (${list.length - F.lim} übrig)</button> <button class="b" id="allm">Alle anzeigen</button></div>` : ''}`
       : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Pokémon eingetragen – trag welche ein oder importiere deinen Poke-Genie-Export.'}</div>`}`;
-  addMon.onclick = () => editMon();
   pgImp.onclick = openPgImport;
   const more = document.getElementById('more'); if (more) more.onclick = () => { F.lim += 120; renderMons(); };
   const allm = document.getElementById('allm'); if (allm) allm.onclick = () => { F.lim = 1e6; renderMons(); };
@@ -635,13 +612,14 @@ function parseSearch(q){
 function monCard(p){
   const iv = ivPct(p);
   const b = [];
+  if (p.pgMissing) b.push(`<span class="bd" style="background:#ffe0e0;color:#a52a2a" title="Seit ${fmtDate(p.pgMissing)} nicht mehr im Poke-Genie-Export">⚠ Nicht mehr im Export</span>`);
   if (p.shiny) b.push('<span class="bd sh">✨ Shiny</span>');
   if (p.align === 'shadow') b.push('<span class="bd cr">Crypto</span>');
   if (p.align === 'purified') b.push('<span class="bd er">Erlöst</span>');
   if (p.lucky) b.push('<span class="bd lu">Glücks</span>');
   if (p.dyna) b.push(`<span class="bd dy">${p.dyna === 'giga' ? 'Gigadynamax' : 'Dynamax'}</span>`);
   if (p.specialMove) b.push(`<span class="bd mv">⚡ Spezialattacke</span>`);
-  if (p.costume) b.push(`<span class="bd">🎩 ${esc(p.costume)}</span>`);
+  if (p.costume || p.costumeKey) b.push(`<span class="bd">🎩 ${esc(p.costume || costumeLabel(p.costumeKey))}</span>`);
   if (p.bg) b.push(`<span class="bd bg">🖼 ${p.bg === 'special' ? 'Spezial' : 'Ort'}${p.bgName ? ': ' + esc(p.bgName) : ''}</span>`);
   if (p.size) b.push(`<span class="bd sz">${p.size}</span>`);
   if (p.viv) b.push(`<span class="bd">${vivDot(p.viv)}${esc(VIVMAP[p.viv]?.[1] || '')}</span>`);
@@ -694,7 +672,7 @@ function editMon(p){
       <label>Geschlecht<select name="gender">${o('', '–', p.gender || '')}${o('m', '♂ männlich', p.gender)}${o('f', '♀ weiblich', p.gender)}</select></label>
       <label>Typ<select name="align">${o('', 'Normal', p.align || '')}${o('shadow', 'Crypto', p.align)}${o('purified', 'Erlöst', p.align)}</select></label>
       <label>Größe<select name="size">${o('', 'Normal', p.size || '')}${['XXS', 'XS', 'XL', 'XXL'].map(z => o(z, z, p.size)).join('')}</select></label>
-      <label>Hintergrund<select name="bg">${o('', 'Kein', p.bg || '')}${o('special', 'Spezial-Hintergrund', p.bg)}${o('location', 'Orts-Hintergrund', p.bg)}</select></label>
+      <label>Hintergrund<select name="bg" ${p.bgKey ? 'disabled title="Ergibt sich aus dem gewählten Hintergrund-Bild"' : ''}>${o('', 'Kein', p.bg || '')}${o('special', 'Spezial-Hintergrund', p.bg)}${o('location', 'Orts-Hintergrund', p.bg)}</select></label>
       <label>Name des Hintergrunds<input name="bgName" list="dlBg" value="${esc(p.bgName)}" placeholder="z. B. GO Fest 2026"></label>
       <label>Dynamax<select name="dyna">${o('', '–', p.dyna || '')}${o('dmax', 'Dynamax', p.dyna)}${o('giga', 'Gigadynamax', p.dyna)}</select></label>
       <label id="vivWrap" style="display:none">Vivillon-Muster<select name="viv"><option value="">–</option>${VIV.map(v => o(v[0], v[1] + 'muster', p.viv)).join('')}</select></label>
@@ -721,7 +699,8 @@ function editMon(p){
       <label>Ort<input name="location" value="${esc(p.location)}"></label>
       <label>Tags<input name="tags" value="${esc(p.tags)}" placeholder="Raid, Tausch, Behalten…"></label>
     </div>
-    <label class="fl" style="margin-top:10px">Notizen<textarea name="notes">${esc(p.notes)}</textarea></label>`,
+    <label class="fl" style="margin-top:10px">Notizen<textarea name="notes">${esc(p.notes)}</textarea></label>
+    ${p.pgMissing ? `<label class="chk" style="margin-top:10px;color:var(--bad)"><input type="checkbox" name="pgMissing" checked> ⚠ Seit ${fmtDate(p.pgMissing)} nicht mehr im Poke-Genie-Export – Haken entfernen, wenn es das Pokémon noch gibt, sonst unten löschen</label>` : ''}`,
     isNew ? '' : `<button class="b d" value="del" formnovalidate style="margin-right:auto">Löschen</button>`,
     (fd, act) => {
       if (act === 'del'){ if (confirm('Pokémon löschen?')){ S.pokemon = S.pokemon.filter(x => x.id !== p.id); save(); render(); } return; }
@@ -731,12 +710,17 @@ function editMon(p){
         ivA: num(fd.get('ivA')), ivD: num(fd.get('ivD')), ivH: num(fd.get('ivH')),
         fast: fd.get('fast').trim(), c1: fd.get('c1').trim(), c2: fd.get('c2').trim(),
         costume: fd.get('costume').trim(), form: fd.get('form').trim(), gender: fd.get('gender'),
-        align: fd.get('align'), dyna: fd.get('dyna'), size: fd.get('size'), bg: fd.get('bg'), bgName: fd.get('bg') ? fd.get('bgName').trim() : '',
-        bgKey: fd.get('bg') && BGS.includes(fd.get('bgKey')) ? fd.get('bgKey') : '',
+        ...(() => {   // Mit Bild ergibt sich die Art aus dem Dateinamen (sb_ = Spezial, lc_ = Ort)
+          const k = BGS.includes(fd.get('bgKey')) ? fd.get('bgKey') : '';
+          const bg = k ? (k.startsWith('sb_') ? 'special' : 'location') : (fd.get('bg') || '');
+          return { bg, bgKey: k, bgName: bg ? fd.get('bgName').trim() : '' };
+        })(),
+        align: fd.get('align'), dyna: fd.get('dyna'), size: fd.get('size'),
         costumeKey: (COSTUMES[num(fd.get('dex'))] || []).some(x => x[0] === fd.get('costumeKey')) ? fd.get('costumeKey') : '', viv: [664, 665, 666].includes(num(fd.get('dex'))) ? fd.get('viv') : '',
         shiny: !!fd.get('shiny'), specialMove: !!fd.get('specialMove'), lucky: !!fd.get('lucky'), fav: !!fd.get('fav'),
         caught: fd.get('caught'), height: num(fd.get('height')), weight: num(fd.get('weight')), location: fd.get('location').trim(), tags: fd.get('tags').trim(), notes: fd.get('notes')
       });
+      if (p.pgMissing && !fd.get('pgMissing')) delete p.pgMissing;
       if (isNew) S.pokemon.push(p); save(); render();
     });
   const f = dlgForm, pvWrap = document.getElementById('pvWrap');
@@ -758,6 +742,7 @@ function editMon(p){
     bgList.innerHTML = `<button type="button" class="pitem ${cur ? '' : 'on'}" data-bgk=""><div class="none">✕</div>Kein Bild</button>` + list.map(k => `<button type="button" class="pitem ${cur === k ? 'on' : ''}" data-bgk="${k}" title="${esc(bgLabel(k))}"><img loading="lazy" src="${bgUrl(k)}" alt="">${k.startsWith('sb_') ? '★ ' : ''}${esc(bgLabel(k))}</button>`).join('');
     bgList.querySelectorAll('[data-bgk]').forEach(b => b.onclick = () => {
       const k = b.dataset.bgk, old = f.bgKey.value; f.bgKey.value = k;
+      f.bg.disabled = !!k;
       if (k){
         f.bg.value = k.startsWith('sb_') ? 'special' : 'location';
         if (!f.bgName.value.trim() || (old && f.bgName.value === bgLabel(old))) f.bgName.value = bgLabel(k);
@@ -773,7 +758,7 @@ function editMon(p){
   const upd = () => {
     const id = num(f.dex.value);
     if (f.costumeKey.value && !(COSTUMES[id] || []).some(x => x[0] === f.costumeKey.value)) f.costumeKey.value = '';
-    const q = { dex: id, form: f.form.value, viv: id === 666 ? f.viv.value : '', shiny: f.shiny.checked, gender: f.gender.value, dyna: f.dyna.value, costumeKey: f.costumeKey.value, bgKey: f.bg.value ? f.bgKey.value : '' };
+    const q = { dex: id, form: f.form.value, viv: id === 666 ? f.viv.value : '', shiny: f.shiny.checked, gender: f.gender.value, dyna: f.dyna.value, costumeKey: f.costumeKey.value, bgKey: f.bgKey.value };
     pvWrap.innerHTML = monPic(q);
     document.getElementById('cosCur').textContent = f.costumeKey.value ? '✓ ' + costumeLabel(f.costumeKey.value) : (COSTUMES[id] || []).length ? `${COSTUMES[id].length} verfügbar` : '';
     document.getElementById('bgCur').textContent = q.bgKey ? '✓ ' + bgLabel(q.bgKey) : '';
@@ -800,7 +785,6 @@ function renderFriends(){
   if (fl === 'inactive') list = list.filter(f => activity(f).cls === 'no');
   if (fl === 'quiet') list = list.filter(f => ['no', 'lo'].includes(activity(f).cls));
   if (fl === 'lucky') list = list.filter(f => f.lucky);
-  if (fl === 'today') list = list.filter(f => f.last !== today());
   if (/^L\d$/.test(fl)) list = list.filter(f => (f.level || 0) === +fl[1]);
   const A = new Map(list.map(f => [f.id, activity(f)]));
   const so = {
@@ -819,13 +803,12 @@ function renderFriends(){
       ${FL.map((l, i) => `<div class="card"><b>${cnt(f => (f.level || 0) === i)}</b><span class="muted">${l}</span></div>`).join('')}
       <div class="card"><b>${cnt(f => activity(f).due)}</b><span class="muted">Prüfung fällig</span></div>
       <div class="card"><b>${cnt(f => activity(f).cls === 'no')}</b><span class="muted">inaktiv?</span></div>
-      <div class="card"><b>${cnt(f => f.last === t)}</b><span class="muted">heute interagiert</span></div>
     </div>
     <div class="bar">
       <button class="b p" id="addF">+ Freund</button>
       <button class="b" id="impF">Freunde importieren</button>
       <input id="fq" placeholder="Suchen (Name, Region, Code…)" value="${esc(FF.q)}" style="flex:1;min-width:160px">
-      <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['today', 'Heute noch nicht interagiert'], ['lucky', 'Glücksfreunde'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['lucky', 'Glücksfreunde'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Am längsten nicht geprüft'], ['stale', 'Am längsten ohne Änderung'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map(f => friendCard(f, A.get(f.id))).join('')}</div>
@@ -845,7 +828,6 @@ function renderFriends(){
     if (a === 'edit') return editFriend(f);
     if (a === 'check') return checkFriend(f);
     if (a === 'card') return editCard(null, f.id);
-    if (a === 'inter'){ interact(f, f.last === today()); save(); renderFriends(); }
     if (a === 'gift'){ f.giftSent = f.giftSent === today() ? '' : today(); save(); renderFriends(); }
   });
 }
@@ -855,7 +837,9 @@ function friendCard(f, ac){
   const cards = S.postcards.filter(c => c.friendId === f.id);
   const pats = [...new Set(cards.map(c => c.viv).filter(Boolean))];
   const hearts = '♥'.repeat(lvl) + '♡'.repeat(MAXLVL - lvl);
-  const eta = pr.left ? new Date(Date.now() + (pr.left - (f.last === t ? 0 : 1)) * 864e5).toLocaleDateString('de-DE') : '';
+  // Frühestes Datum: Stand der Resttage (Prüfung/Eintrag) + Resttage, bei täglicher Interaktion
+  const etaD = pr.left && f.leftDate ? new Date(new Date(f.leftDate + 'T12:00').getTime() + pr.left * 864e5) : null;
+  const eta = !etaD ? '' : etaD.toISOString().slice(0, 10) <= t ? 'evtl. schon erreicht – prüfen' : 'frühestens ' + etaD.toLocaleDateString('de-DE');
   const trainer = [f.trainerLvl ? `Lv ${f.trainerLvl}` : '', f.xp != null ? `EP ${xpFmt(f.xp)}` : ''].filter(Boolean).join(' · ');
   const short = d => d ? new Date(d + 'T12:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '–';
   return `<div class="card fr">
@@ -863,7 +847,7 @@ function friendCard(f, ac){
     <div class="muted" style="font-size:13px">${[esc(f.region || 'Herkunft unbekannt'), trainer, f.code ? esc(f.code) : ''].filter(Boolean).join(' · ')}</div>
     <div class="row" style="margin-top:8px"><span class="hearts" style="color:#e2557a">${hearts}</span><b class="sp">${FL[lvl]}</b></div>
     <div class="prog"><i style="width:${pr.pct}%"></i></div>
-    <div class="note">${pr.next ? `Noch <b>${pr.left}</b> ${pr.unit} bis <b>${pr.next}</b>${eta ? ` · frühestens ${eta}` : ''}` : `Höchstes Level erreicht 🎉${f.left != null ? ` · Zähler laut Spiel: ${f.left}` : ''}`}</div>
+    <div class="note">${pr.next ? `Noch <b>${pr.left}</b> ${pr.unit} bis <b>${pr.next}</b>${eta ? ` · ${eta}` : ''}` : `Höchstes Level erreicht 🎉${f.left != null ? ` · Zähler laut Spiel: ${f.left}` : ''}`}</div>
     <div class="row" style="margin-top:10px">
       <span class="st ${ac.cls}">${ac.txt}</span>${ac.due ? '<span class="st lo">Prüfung fällig</span>' : ''}<span class="note sp">${ac.detail}</span>
     </div>
@@ -871,7 +855,6 @@ function friendCard(f, ac){
     ${pats.length ? `<div class="note" style="margin-top:4px">Vivillon: ${pats.map(k => vivDot(k) + esc(VIVMAP[k]?.[1])).join(', ')}</div>` : ''}
     ${cards.length ? `<div class="note" style="margin-top:2px">${cards.length} Postkarte${cards.length === 1 ? '' : 'n'}</div>` : ''}
     <div class="row" style="margin-top:10px">
-      <button class="b s ${f.last === t ? 'p' : ''}" data-act="inter" data-id="${f.id}">${f.last === t ? '✓ Heute interagiert' : 'Heute interagiert'}</button>
       <button class="b s ${f.giftSent === t ? 'p' : ''}" data-act="gift" data-id="${f.id}">🎁 ${f.giftSent === t ? 'Gesendet' : 'Geschenk'}</button>
       <button class="b s ${ac.due ? 'p' : ''}" data-act="check" data-id="${f.id}">Prüfen</button>
       <button class="b s" data-act="card" data-id="${f.id}">+ Postkarte</button>
@@ -895,7 +878,7 @@ function editFriend(f){
       <label>Resttage/-punkte laut Spiel<input name="left" type="number" min="0" max="90" value="${f.left ?? (pr.left ?? '')}"></label>
       <label class="chk"><input type="checkbox" name="lucky" ${f.lucky ? 'checked' : ''}> Glücksfreund</label>
     </div>
-    <p class="note">Hier korrigierst du nur den Zähler. Zum Abgleichen mit dem Spiel nimm „Prüfen“ – nur dort werden die Änderungsdaten fortgeschrieben.</p>
+    <p class="note">Hier korrigierst du nur Level und Resttage (Stand: heute). Zum Abgleichen mit dem Spiel nimm „Prüfen“ – nur dort werden die Änderungsdaten fortgeschrieben.</p>
     <label class="fl">Notizen<textarea name="notes">${esc(f.notes)}</textarea></label>
     ${!isNew ? `<div class="sec">Stand</div><p class="note" style="margin:0">Letzte Prüfung: <b>${fmtDate(f.lastCheck)}</b> · EP zuletzt geändert: <b>${fmtDate(f.xpChanged)}</b> · Freundschaft zuletzt geändert: <b>${fmtDate(f.friendChanged)}</b>${f.importPrev ? `<br>Vorherige Werte aus Notion: EP ${xpFmt(f.importPrev.xp)} · Rest ${f.importPrev.left ?? '–'}` : ''}</p>` : ''}
     ${snaps.length ? `<div class="sec">Prüf-Verlauf</div><div style="overflow-x:auto"><table><tr><th>Datum</th><th>Lv</th><th>EP (4 Ziffern)</th><th>Freundeslevel</th><th>Rest</th><th></th></tr>
@@ -906,7 +889,7 @@ function editFriend(f){
       const lvl = +fd.get('level'), left = num(fd.get('left'));
       Object.assign(f, { name: fd.get('name').trim(), code: fd.get('code').trim(), region: fd.get('region').trim(), since: fd.get('since'), lucky: !!fd.get('lucky'), notes: fd.get('notes') });
       if (lvl !== (f.level || 0) || left !== (f.left ?? null)){
-        f.level = lvl; f.left = left ?? spanOf(lvl); f.leftDate = today(); delete f.prevState;
+        f.level = lvl; f.left = left ?? spanOf(lvl); f.leftDate = today();
       }
       if (isNew) S.friends.push(f); save(); render();
     });
@@ -937,7 +920,7 @@ function checkFriend(f){
       if (frCh) f.friendChanged = d; else if (!f.friendChanged) f.friendChanged = d;
       f.lastCheck = d;
       f.trainerLvl = n.lvl; f.xp = n.xp; f.level = n.level;
-      f.left = n.left ?? spanOf(n.level); f.leftDate = d; delete f.prevState;
+      f.left = n.left ?? spanOf(n.level); f.leftDate = d;
       f.chk = { date: d, lvl: n.lvl, xp: n.xp, level: n.level, left: n.left };
       f.snaps = (f.snaps || []).filter(s => s.date !== d); f.snaps.push({ date: d, ...n });
       save(); render();
@@ -1045,11 +1028,11 @@ function renderData(){
   main.innerHTML = `
     <div class="card" style="max-width:640px">
       <h3 style="margin-top:0">Sicherung</h3>
-      <p class="note">Alles wird nur in diesem Browser gespeichert. Exportiere regelmäßig eine Sicherung – damit kannst du deine Daten auch auf ein anderes Gerät übertragen.</p>
-      <p class="note">Speicher: <b>${STORE_MODE === 'idb' ? 'IndexedDB „' + DB_NAME + '“' : STORE_MODE === 'ls' ? 'localStorage (Notlösung)' : 'gesperrt'}</b> · Datenmenge ca. ${Math.round(JSON.stringify(S).length / 1024)} KB · Dauerhafter Speicher: ${PERSISTED == null ? 'unbekannt' : PERSISTED ? 'ja' : 'nein (Browser darf bei Platzmangel löschen)'}</p>
+      <p class="note">Die Daten liegen in diesem Browser und werden über den GitHub-Sync (☁︎ unten links, eingerichtet auf der Startseite) mit deinen anderen Geräten abgeglichen. Die JSON-Sicherung ist die Rückfallebene, falls dabei etwas schiefgeht.</p>
+      <p class="note">Speicher: <b>${STORE_MODE === 'idb' ? 'IndexedDB „' + DB_NAME + '“' : STORE_MODE === 'readonly' ? 'nicht verfügbar (nur Ansicht)' : 'gesperrt'} · Sync: ${SYNC ? 'aktiv' : 'aus'}</b> · Datenmenge ca. ${Math.round(JSON.stringify(S).length / 1024)} KB · Dauerhafter Speicher: ${PERSISTED == null ? 'unbekannt' : PERSISTED ? 'ja' : 'nein (Browser darf bei Platzmangel löschen)'}</p>
       <div class="row">
         <button class="b p" id="exp">Exportieren (JSON)</button>
-        <label class="b" style="cursor:pointer">Importieren…<input type="file" id="imp" accept=".json,application/json" hidden></label>
+        <label class="b" style="cursor:pointer">Sicherung einspielen…<input type="file" id="imp" accept=".json,application/json" hidden></label>
       </div>
       <h3>Poke Genie</h3>
       <p class="note">CSV-Export aus Poke Genie einlesen. Erneute Importe aktualisieren bestehende Einträge, ohne deine eigenen Angaben zu überschreiben.</p>
@@ -1064,14 +1047,15 @@ function renderData(){
     </div>`;
   pgImp2.onclick = openPgImport;
   impF2.onclick = openFriendImport;
-  exp.onclick = exportJSON;
+  exp.onclick = () => exportJSON();
   imp.onchange = async e => {
     const file = e.target.files[0]; if (!file) return;
     try{
       const d = JSON.parse(await file.text());
       if (!Array.isArray(d.pokemon) || !Array.isArray(d.friends)) throw new Error('Unbekanntes Format');
-      if (!confirm('Aktuelle Daten durch die Sicherung ersetzen?')) return;
-      S = Object.assign(blank(), d); if (STORE_MODE === 'locked') STORE_MODE = db ? 'idb' : 'ls';
+      if (!confirm('Sicherung einspielen?\n\nDer komplette Stand wird ersetzt – wegen des Syncs auf ALLEN Geräten:\n• neuere Änderungen gehen verloren\n• was in der Sicherung fehlt, wird überall gelöscht\n\nVorher wird automatisch eine Sicherung des aktuellen Stands heruntergeladen.')) return;
+      exportJSON('vor-import');
+      S = Object.assign(blank(), d); if (STORE_MODE === 'locked' && db) STORE_MODE = 'idb';
       const ok = await save(); render(); alert(ok ? 'Import erfolgreich.' : 'Import eingelesen, aber Speichern fehlgeschlagen – siehe roter Hinweis oben.');
     }catch(err){ alert('Import fehlgeschlagen: ' + err.message); }
   };
@@ -1154,28 +1138,42 @@ function importPokeGenie(text, removeMissing){
     let m = null;
     if (cands.length) m = cands.sort((a, b) => ((a.dex === n.dex ? 0 : 1) - (b.dex === n.dex ? 0 : 1)) || Math.abs((a.cp || 0) - n.cp) - Math.abs((b.cp || 0) - n.cp))[0];
     if (m){
-      const { added: _a, pgFav, ...upd } = n;
+      const { added: _a, pgFav, form, ...upd } = n;
       if (!m.caught && !upd.caught) delete upd.caught;
-      Object.assign(m, upd); seen.add(m.id); updated++;
+      // Form nur übernehmen, wenn du sie nicht selbst geändert hast (pgForm = zuletzt aus Poke Genie übernommen).
+      // Ältere Einträge ohne pgForm: eine vorhandene Form bleibt beim ersten Mal stehen.
+      const own = m.pgForm === undefined ? !!m.form : m.form !== m.pgForm;
+      if (!own) m.form = form;
+      m.pgForm = form;
+      Object.assign(m, upd); delete m.pgMissing; seen.add(m.id); updated++;
     } else {
       const { pgFav, ...rest } = n;
-      const p = { id: uid(), ...rest, fav: pgFav };
+      const p = { id: uid(), ...rest, pgForm: rest.form, fav: pgFav };
       S.pokemon.push(p); seen.add(p.id); added++;
     }
   }
+  let marked = 0;
   if (removeMissing){
-    const before = S.pokemon.length;
-    S.pokemon = S.pokemon.filter(p => p.src !== 'pokegenie' || seen.has(p.id));
-    removed = before - S.pokemon.length;
+    const keep = [];
+    for (const p of S.pokemon){
+      if (p.src !== 'pokegenie' || seen.has(p.id)){ keep.push(p); continue; }
+      // Mit eigenen Angaben nie automatisch löschen, nur markieren
+      if (hasOwnData(p)){ if (!p.pgMissing) p.pgMissing = today(); keep.push(p); marked++; }
+      else removed++;
+    }
+    S.pokemon = keep;
   }
-  return { total: rows.length, added, updated, removed };
+  return { total: rows.length, added, updated, removed, marked };
 }
+// Angaben, die nur du einträgst (Poke Genie exportiert sie nicht)
+const hasOwnData = p => !!(p.shiny || p.specialMove || p.costume || p.costumeKey || p.bg || p.bgKey || p.size || p.dyna || p.viv || p.nick || p.tags || (p.notes && p.notes.trim()) || p.fav);
 function openPgImport(){
   openDlg('Poke-Genie-Export importieren', `
     <p>In Poke Genie: <b>Einstellungen → Exportieren</b> (CSV) und die Datei hier auswählen.</p>
     <label class="fl">CSV-Datei<input type="file" name="file" accept=".csv,text/csv" required></label>
     <label class="chk" style="margin-top:12px"><input type="checkbox" name="rm"> Importierte Pokémon entfernen, die nicht mehr im Export sind (z. B. verschickt oder getauscht)</label>
-    <p class="note">Bei einem erneuten Import werden bereits importierte Pokémon wiedererkannt und aktualisiert (WP, Level, Attacken, Entwicklung …). Was du selbst einträgst – Shiny, Spezialattacke, Kostüm, Hintergrund, Größenklasse, Vivillon-Muster, Spitzname, Tags, Notizen – bleibt erhalten, denn das exportiert Poke Genie nicht.</p>
+    <p class="note" style="margin-top:2px">Pokémon mit eigenen Angaben (Shiny, Kostüm, Hintergrund, Spezialattacke, Notizen …) werden dabei nie gelöscht, sondern als „Nicht mehr im Export“ markiert – du entscheidest selbst.</p>
+    <p class="note">Bei einem erneuten Import werden bereits importierte Pokémon wiedererkannt und aktualisiert (WP, Level, Attacken, Entwicklung …). Was du selbst einträgst – Shiny, Spezialattacke, Kostüm, Hintergrund, Größenklasse, Vivillon-Muster, Spitzname, Tags, Notizen – bleibt erhalten, denn das exportiert Poke Genie nicht. Eine Form, die du selbst geändert hast, wird nicht überschrieben.</p>
     <p class="note">Tipp: Vorher unter „Daten“ eine Sicherung exportieren.</p>`, '',
     async fd => {
       const f = fd.get('file'); if (!f || !f.size) return;
@@ -1184,7 +1182,7 @@ function openPgImport(){
         const ok = await save();
         render();
         if (!ok) return alert('Import eingelesen, aber Speichern fehlgeschlagen – siehe roter Hinweis oben.');
-        alert(`${res.total} Pokémon gelesen:\n• ${res.added} neu\n• ${res.updated} aktualisiert${res.removed ? `\n• ${res.removed} entfernt` : ''}`);
+        alert(`${res.total} Pokémon gelesen:\n• ${res.added} neu\n• ${res.updated} aktualisiert${res.removed ? `\n• ${res.removed} entfernt` : ''}${res.marked ? `\n• ${res.marked} als „Nicht mehr im Export“ markiert (mit eigenen Angaben – Filter „Nicht mehr im Export“)` : ''}`);
       }catch(err){ alert('Import fehlgeschlagen: ' + err.message); }
     });
 }
@@ -1243,7 +1241,6 @@ function importFriends(list){
       f.snaps = (f.snaps || []).filter(s => s.date !== f.lastCheck);
       f.snaps.push({ date: f.lastCheck, lvl: f.trainerLvl, xp: f.xp, level: f.level, left: r.left ?? null });
     }
-    delete f.prevState;
     if (isNew){ S.friends.push(f); byName.set(name.toLowerCase(), f); added++; } else updated++;
   }
   return { added, updated, skipped };
