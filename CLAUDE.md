@@ -10,6 +10,7 @@
 - Bilder werden nur verlinkt, nicht ins Repo kopiert: PokéAPI-HOME-Sprites (Formen, Gigadynamax) und PokeMiners/pogo_assets (Hintergründe `Images/LocationCards`). Listen `FORMDATA`, `BGS` sind in `index.html` eingebettet; bei neuen Events neu erzeugen.
 - Kostüme sind reiner Text (`costume`). Kostüm-Bilder wurden am 23.11.2026 auf Wunsch zurückgebaut (uneinheitlich: nicht alle vorhanden, anderer Stil/andere Größe) – nicht wieder einführen. Alte `costumeKey` werden beim Start in Text umgewandelt.
 - Hintergrund: Bild `bgKey` (z. B. `sb_GoFest2025`), Freitext `bgName` bleibt als Fallback.
+- Mega-/Proto-Level pro Pokémon: Feld `mega` (1 Basis, 2 Hoch, 3 Max, 4 Super-Max, leer = noch nie). Nur bei Arten aus `MEGA` (PokéAPI, inkl. Megas, die es in GO noch nicht gibt), nicht bei Crypto. Poke Genie exportiert es nicht → eigene Angabe, der Abgleich fasst es nicht an. Keine Mega-Bilder.
 
 ## Gemeinsame Regeln für alle Tools unter thevizce.github.io
 

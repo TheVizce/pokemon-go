@@ -61,7 +61,7 @@ button.d{color:var(--bad)}
 .badges{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:6px}
 .bd{font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px;background:var(--acc2);color:var(--acc)}
 .bd.sh{background:#fff3c4;color:#8a6500}.bd.cr{background:#ece3ff;color:#5b2fb5}.bd.lu{background:#fff0c2;color:#9a6c00}
-.bd.er{background:#e2f6ff;color:#0b6c91}.bd.dy{background:#ffe2ea;color:#b0244b}
+.bd.er{background:#e2f6ff;color:#0b6c91}.bd.dy{background:#ffe2ea;color:#b0244b}.bd.mg{background:#efe4ff;color:#6a2fb8}
 .bd.bg{background:#e3f7e9;color:#1b7a43}.bd.fm{background:#e6ecff;color:#2f4fb3}.bd.mv{background:#fde4cf;color:#a3470d}.bd.sz{background:#f0e6da;color:#7a4b1b}
 .ivrow{display:flex;justify-content:space-between;font-size:13px;margin-top:6px;color:var(--muted)}
 .ivp{font-weight:800;color:var(--ink)}
@@ -560,7 +560,7 @@ function renderMons(){
   let list = S.pokemon.slice();
   const terms = parseSearch(F.q);
   if (terms.length) list = list.filter(p => {
-    const hay = [p.name, p.nick, p.form, p.costume, p.bgName, p.size, p.tags, p.location, p.notes, p.fast, p.c1, p.c2, '#' + p.dex].join(' ').toLowerCase();
+    const hay = [p.name, p.nick, p.form, p.costume, p.bgName, p.size, p.tags, p.location, p.notes, p.fast, p.c1, p.c2, megaLabel(p), '#' + p.dex].join(' ').toLowerCase();
     const names = [p.name, p.nick].filter(Boolean).map(x => x.toLowerCase());
     return terms.some(t => t.every(w => w.exact ? names.includes(w.v) || '#' + p.dex === w.v : hay.includes(w.v)));
   });
@@ -574,6 +574,7 @@ function renderMons(){
   if (fl === 'fav') list = list.filter(p => p.fav);
   if (fl === 'dyna') list = list.filter(p => p.dyna);
   if (fl === 'move') list = list.filter(p => p.specialMove);
+  if (fl === 'mega') list = list.filter(p => p.mega);
   if (fl === 'pgmissing') list = list.filter(p => p.pgMissing);
   if (fl === 'form') list = list.filter(p => p.form && !/^normal$/i.test(p.form));
   if (fl === 'bg') list = list.filter(p => p.bg || p.bgKey);
@@ -604,7 +605,7 @@ function renderMons(){
     <div class="bar">
       <button class="b" id="pgImp">Poke Genie abgleichen</button>
       <input id="q" placeholder="Suchen, z. B. Evoli & Blitza & Flamara" title="Mehrere Suchbegriffe mit & , ; oder | trennen – angezeigt wird, was zu irgendeinem passt. Mit + verknüpfen, wenn alles zutreffen soll (z. B. Glurak + Luftschnitt). In Anführungszeichen = genauer Name (z. B. &quot;Mew&quot; ohne Mewtu)." value="${esc(F.q)}" style="flex:1;min-width:180px">
-      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['pgmissing', 'Nicht mehr im Export'], ['form', 'Mit Form'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['mega', 'Mit Mega-/Proto-Level'], ['pgmissing', 'Nicht mehr im Export'], ['form', 'Mit Form'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="sort">${[['new', 'Neueste'], ['dex', 'Pokédex-Nr.'], ['cp', 'WP'], ['iv', 'IV'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid">${list.slice(0, F.lim).map(monCard).join('')}</div>
@@ -628,6 +629,12 @@ function parseSearch(q){
     return m ? { v: m[1].trim(), exact: true } : { v: w, exact: false };
   }).filter(w => w && w.v)).filter(t => t.length);
 }
+/* Mega-Level pro Pokémon (gehört zum einzelnen Pokémon, nicht zur Art). Arten mit Mega-/Proto-Form laut PokéAPI –
+   enthält auch Megas, die es in GO (noch) nicht gibt; dort bleibt das Feld einfach leer. Crypto kann nicht mega-entwickeln. */
+const MEGA = new Set([3, 6, 9, 15, 18, 26, 36, 65, 71, 80, 94, 115, 121, 127, 130, 142, 149, 150, 154, 160, 181, 208, 212, 214, 227, 229, 248, 254, 257, 260, 282, 302, 303, 306, 308, 310, 319, 323, 334, 354, 358, 359, 362, 373, 376, 380, 381, 382, 383, 384, 398, 428, 445, 448, 460, 475, 478, 485, 491, 500, 530, 531, 545, 560, 604, 609, 623, 652, 655, 658, 668, 670, 678, 687, 689, 691, 701, 718, 719, 740, 768, 780, 801, 807, 870, 952, 970, 978, 998]), PRIMAL = new Set([382, 383]);
+const MEGA_LV = ['', 'Basis', 'Hoch', 'Max', 'Super-Max'];
+const megaWord = dex => PRIMAL.has(dex) ? 'Proto' : 'Mega';
+const megaLabel = p => p.mega ? `${megaWord(p.dex)}: ${MEGA_LV[p.mega]}` : '';
 function monCard(p){
   const iv = ivPct(p);
   const b = [];
@@ -637,6 +644,7 @@ function monCard(p){
   if (p.align === 'purified') b.push('<span class="bd er">Erlöst</span>');
   if (p.lucky) b.push('<span class="bd lu">Glücks</span>');
   if (p.dyna) b.push(`<span class="bd dy">${p.dyna === 'giga' ? 'Gigadynamax' : 'Dynamax'}</span>`);
+  if (p.mega) b.push(`<span class="bd mg">${megaLabel(p)}</span>`);
   if (p.specialMove) b.push(`<span class="bd mv">⚡ Spezialattacke</span>`);
   if (p.costume) b.push(`<span class="bd">🎩 ${esc(p.costume)}</span>`);
   if (p.bg) b.push(`<span class="bd bg">🖼 ${p.bg === 'special' ? 'Spezial' : 'Ort'}${p.bgName ? ': ' + esc(p.bgName) : ''}</span>`);
@@ -693,6 +701,7 @@ function editMon(p){
       <label>Größe<select name="size">${o('', 'Normal', p.size || '')}${['XXS', 'XS', 'XL', 'XXL'].map(z => o(z, z, p.size)).join('')}</select></label>
       <label>Hintergrund<select name="bg" ${p.bgKey ? 'disabled title="Ergibt sich aus dem gewählten Hintergrund-Bild"' : ''}>${o('', 'Kein', p.bg || '')}${o('special', 'Spezial-Hintergrund', p.bg)}${o('location', 'Orts-Hintergrund', p.bg)}</select></label>
       <label>Name des Hintergrunds<input name="bgName" list="dlBg" value="${esc(p.bgName)}" placeholder="z. B. GO Fest 2026"></label>
+      <label id="megaWrap" style="display:none"><span id="megaLbl">Mega-Level</span><select name="mega">${MEGA_LV.map((l, i) => `<option value="${i || ''}" ${(p.mega || 0) === i ? 'selected' : ''}>${l || '– noch nie'}</option>`).join('')}</select></label>
       <label>Dynamax<select name="dyna">${o('', '–', p.dyna || '')}${o('dmax', 'Dynamax', p.dyna)}${o('giga', 'Gigadynamax', p.dyna)}</select></label>
       <label id="vivWrap" style="display:none">Vivillon-Muster<select name="viv"><option value="">–</option>${VIV.map(v => o(v[0], v[1] + 'muster', p.viv)).join('')}</select></label>
       <label class="chk"><input type="checkbox" name="shiny" ${p.shiny ? 'checked' : ''}> ✨ Shiny</label>
@@ -732,6 +741,7 @@ function editMon(p){
           return { bg, bgKey: k, bgName: bg ? fd.get('bgName').trim() : '' };
         })(),
         align: fd.get('align'), dyna: fd.get('dyna'), size: fd.get('size'),
+        mega: MEGA.has(num(fd.get('dex'))) && fd.get('align') !== 'shadow' ? num(fd.get('mega')) : null,
         viv: [664, 665, 666].includes(num(fd.get('dex'))) ? fd.get('viv') : '',
         shiny: !!fd.get('shiny'), specialMove: !!fd.get('specialMove'), lucky: !!fd.get('lucky'), fav: !!fd.get('fav'),
         caught: fd.get('caught'), height: num(fd.get('height')), weight: num(fd.get('weight')), location: fd.get('location').trim(), tags: fd.get('tags').trim(), notes: fd.get('notes')
@@ -758,13 +768,16 @@ function editMon(p){
   document.getElementById('bgBtn').onclick = () => { bgPick.hidden = !bgPick.hidden; if (!bgPick.hidden) renderBg(); };
   document.getElementById('bgQ').oninput = renderBg; document.getElementById('bgT').onchange = renderBg;
   f.bg.addEventListener('change', () => { if (!f.bg.value){ f.bgKey.value = ''; if (!bgPick.hidden) renderBg(); } upd(); });
-  f.dyna.addEventListener('change', () => upd()); f.gender.addEventListener('change', () => upd());
+  f.dyna.addEventListener('change', () => upd()); f.gender.addEventListener('change', () => upd()); f.align.addEventListener('change', () => upd());
   const upd = () => {
     const id = num(f.dex.value);
     const q = { dex: id, form: f.form.value, viv: id === 666 ? f.viv.value : '', shiny: f.shiny.checked, gender: f.gender.value, dyna: f.dyna.value, bgKey: f.bgKey.value };
     pvWrap.innerHTML = monPic(q);
     document.getElementById('bgCur').textContent = q.bgKey ? '✓ ' + bgLabel(q.bgKey) : '';
     document.getElementById('vivWrap').style.display = [664, 665, 666].includes(id) ? '' : 'none';
+    document.getElementById('megaWrap').style.display = MEGA.has(id) ? '' : 'none';
+    document.getElementById('megaLbl').textContent = megaWord(id) + '-Level' + (f.align.value === 'shadow' ? ' (Crypto: nicht möglich)' : '');
+    f.mega.disabled = f.align.value === 'shadow';
     document.getElementById('dlForms').innerHTML = (FORMDATA[id] || []).filter(t => t[0]).map(t => `<option value="${esc(t[0])}">`).join('');
     const ft = findForm(id, q.form);
     document.getElementById('formHint').textContent = !q.form || /^normal$/i.test(q.form) ? '' : ft ? `✓ Bild: ${ft[0] || ft[1]}` : 'Kein eigenes Bild – wird als Tag angezeigt';
@@ -1123,7 +1136,7 @@ function pgRow(r){
   };
 }
 // Angaben, die nur du einträgst (Poke Genie exportiert sie nicht)
-const hasOwnData = p => !!(p.shiny || p.specialMove || p.costume || p.bg || p.bgKey || p.size || p.dyna || p.viv || p.nick || p.tags || (p.notes && p.notes.trim()) || p.fav);
+const hasOwnData = p => !!(p.shiny || p.specialMove || p.costume || p.bg || p.bgKey || p.size || p.dyna || p.mega || p.viv || p.nick || p.tags || (p.notes && p.notes.trim()) || p.fav);
 
 /* ===================== Poke-Genie-Abgleich (Prüfung vor dem Übernehmen) ===================== */
 // Ein Backup wird nie direkt übernommen. Das Tool stellt den aktuellen Stand dem Backup gegenüber,
@@ -1267,7 +1280,7 @@ function ownBadges(p){
   if (p.nick) b.push('„' + esc(p.nick) + '“');
   if (p.shiny) b.push('✨ Shiny'); if (p.costume) b.push('🎩 ' + esc(p.costume));
   if (p.bg || p.bgKey) b.push('🖼 ' + esc(p.bgName || (p.bgKey ? bgLabel(p.bgKey) : 'Hintergrund')));
-  if (p.specialMove) b.push('⚡ Spezialattacke'); if (p.size) b.push(esc(p.size)); if (p.dyna) b.push(p.dyna === 'giga' ? 'Gigadynamax' : 'Dynamax');
+  if (p.specialMove) b.push('⚡ Spezialattacke'); if (p.size) b.push(esc(p.size)); if (p.dyna) b.push(p.dyna === 'giga' ? 'Gigadynamax' : 'Dynamax'); if (p.mega) b.push(megaLabel(p));
   if (p.viv) b.push('Vivillon: ' + esc(VIVMAP[p.viv]?.[1] || p.viv)); if (p.fav) b.push('★'); if (p.tags) b.push('# ' + esc(p.tags)); if (p.notes && p.notes.trim()) b.push('📝');
   if (p.pgMissing) b.push('⚠ markiert seit ' + fmtDate(p.pgMissing));
   return b.length ? `<div class="badges" style="justify-content:flex-start">${b.map(x => `<span class="bd">${x}</span>`).join('')}</div>` : '';
