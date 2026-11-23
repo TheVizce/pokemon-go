@@ -105,6 +105,9 @@ dialog::backdrop{background:rgba(10,15,30,.5)}
 /* Schwebender Hinzufügen-Knopf (rechts unten, links unten liegt das ☁︎-Feld des Syncs) */
 .fab{position:fixed;right:calc(18px + env(safe-area-inset-right));bottom:calc(18px + env(safe-area-inset-bottom));z-index:15;width:56px;height:56px;border-radius:50%;border:0;background:var(--acc);color:#fff;font-size:30px;line-height:1;cursor:pointer;box-shadow:0 4px 14px rgba(20,40,120,.35);display:flex;align-items:center;justify-content:center;transition:transform .15s}
 .fab:hover{transform:scale(1.07)}
+.navb{display:flex;align-items:center;gap:6px;margin-right:auto;flex-wrap:wrap}
+button.b:disabled{opacity:.4;cursor:default}
+.df{flex-wrap:wrap}
 /* Poke-Genie-Abgleich */
 .rvlist{display:grid;gap:10px}
 .rv.dec{border-color:var(--good)}
@@ -600,6 +603,7 @@ function renderMons(){
     name: (a, b) => (a.name || '').localeCompare(b.name || '', 'de')
   }[F.sort] || ((a, b) => (b.added || '').localeCompare(a.added || ''));
   list.sort(so);
+  NAV.mons = list.map(p => p.id);
   const all = S.pokemon;
   main.innerHTML = `
     <div class="stat">
@@ -749,8 +753,10 @@ function editMon(p){
     <div id="geoRes" class="picker" hidden></div>
     <label class="fl" style="margin-top:10px">Notizen<textarea name="notes">${esc(p.notes)}</textarea></label>
     ${p.pgMissing ? `<label class="chk" style="margin-top:10px;color:var(--bad)"><input type="checkbox" name="pgMissing" checked> ⚠ Seit ${fmtDate(p.pgMissing)} nicht mehr im Poke-Genie-Export – Haken entfernen, wenn es das Pokémon noch gibt, sonst unten löschen</label>` : ''}`,
-    isNew ? '' : `<button class="b d" value="del" formnovalidate style="margin-right:auto">Löschen</button>`,
-    (fd, act) => {
+    navBtns('mons', isNew ? null : p.id) + (isNew ? '' : `<button class="b d" value="del" formnovalidate>Löschen</button>`),
+    (fd, act, changed) => {
+      const go = navTarget('mons', p.id, act);
+      if (go !== undefined && !changed) return navOpen('mons', go);
       if (act === 'del'){ if (confirm('Pokémon löschen?')){ S.pokemon = S.pokemon.filter(x => x.id !== p.id); save(); render(); } return; }
       Object.assign(p, {
         name: (DEX[num(fd.get('dex'))]?.de) || fd.get('name').trim(), dex: num(fd.get('dex')), nick: fd.get('nick').trim(),
@@ -771,6 +777,7 @@ function editMon(p){
       });
       if (p.pgMissing && !fd.get('pgMissing')) delete p.pgMissing;
       if (isNew) S.pokemon.push(p); save(); render();
+      if (go !== undefined) navOpen('mons', go);
     });
   const f = dlgForm, pvWrap = document.getElementById('pvWrap');
   const bgPick = document.getElementById('bgPick'), bgList = document.getElementById('bgList');
@@ -837,6 +844,7 @@ function renderFriends(){
     name: (a, b) => a.name.localeCompare(b.name, 'de')
   }[FF.sort] || ((a, b) => a.name.localeCompare(b.name, 'de'));
   list.sort((a, b) => so(a, b) || a.name.localeCompare(b.name, 'de'));
+  NAV.friends = list.map(f => f.id);
   const t = today(), all = S.friends;
   const cnt = fn => all.filter(fn).length;
   main.innerHTML = `
@@ -921,8 +929,10 @@ function editFriend(f){
     ${!isNew ? `<div class="sec">Stand</div><p class="note" style="margin:0">Letzte Prüfung: <b>${fmtDate(f.lastCheck)}</b> · EP zuletzt geändert: <b>${fmtDate(f.xpChanged)}</b> · Freundschaft zuletzt geändert: <b>${fmtDate(f.friendChanged)}</b>${f.importPrev ? `<br>Vorherige Werte aus Notion: EP ${xpFmt(f.importPrev.xp)} · Rest ${f.importPrev.left ?? '–'}` : ''}</p>` : ''}
     ${snaps.length ? `<div class="sec">Prüf-Verlauf</div><div style="overflow-x:auto"><table><tr><th>Datum</th><th>Lv</th><th>EP (4 Ziffern)</th><th>Freundeslevel</th><th>Rest</th><th></th></tr>
       ${snaps.map(s => `<tr><td>${fmtDate(s.date)}</td><td>${s.lvl ?? '–'}</td><td title="${s.xp ?? ''}">${xpFmt(s.xp)}</td><td>${s.level != null ? FL[s.level] : '–'}</td><td>${s.left ?? '–'}</td><td><button class="b s d" type="button" data-snap="${s.date}">✕</button></td></tr>`).join('')}</table></div>` : ''}`,
-    isNew ? '' : `<button class="b d" value="del" formnovalidate style="margin-right:auto">Löschen</button>`,
-    (fd, act) => {
+    navBtns('friends', isNew ? null : f.id) + (isNew ? '' : `<button class="b d" value="del" formnovalidate>Löschen</button>`),
+    (fd, act, changed) => {
+      const go = navTarget('friends', f.id, act);
+      if (go !== undefined && !changed) return navOpen('friends', go);
       if (act === 'del'){ if (confirm(`${f.name} löschen? Postkarten bleiben erhalten.`)){ S.friends = S.friends.filter(x => x.id !== f.id); S.postcards.forEach(c => { if (c.friendId === f.id) c.friendId = ''; }); save(); render(); } return; }
       const lvl = +fd.get('level'), left = num(fd.get('left'));
       Object.assign(f, { name: fd.get('name').trim(), code: fd.get('code').trim(), region: fd.get('region').trim(), since: fd.get('since'), lucky: !!fd.get('lucky'), notes: fd.get('notes') });
@@ -930,6 +940,7 @@ function editFriend(f){
         f.level = lvl; f.left = left ?? spanOf(lvl); f.leftDate = today();
       }
       if (isNew) S.friends.push(f); save(); render();
+      if (go !== undefined) navOpen('friends', go);
     });
   dlgB.querySelectorAll('[data-snap]').forEach(b => b.onclick = () => { f.snaps = f.snaps.filter(s => s.date !== b.dataset.snap); save(); b.closest('tr').remove(); render(); });
 }
@@ -946,8 +957,11 @@ function checkFriend(f){
       <label>Resttage/-punkte<input name="left" type="number" min="0" max="90" value="${f.left ?? ''}"></label>
     </div>
     <p class="note">Bei den EP zählen nur die <b>letzten 4 Ziffern</b> der Gesamt-EP aus dem Profil (aus 12.345.678 wird 5678). Gibst du die volle Zahl ein, kürzt das Tool sie automatisch.</p>
-    <p class="note">Letzte Prüfung: Lv ${c.lvl ?? '–'} · EP ${xpFmt(c.xp)} · ${c.level != null ? FL[c.level] : '–'} · Rest ${c.left ?? '–'}</p>`, '',
-    fd => {
+    <p class="note">Letzte Prüfung: Lv ${c.lvl ?? '–'} · EP ${xpFmt(c.xp)} · ${c.level != null ? FL[c.level] : '–'} · Rest ${c.left ?? '–'}</p>`, navBtns('check', f.id),
+    (fd, act) => {
+      // Prüfen: „Überspringen“ und „Zurück“ speichern nichts, „Speichern & weiter“ speichert die Prüfung
+      const go = navTarget('check', f.id, act);
+      if (act === 'skip' || act === 'prev') return navOpen('check', go);
       const d = fd.get('date');
       const n = { lvl: num(fd.get('lvl')), xp: xpS(String(fd.get('xp')).replace(/[^0-9]/g, '')), level: +fd.get('level'), left: num(fd.get('left')) };
       const lvlUp = n.lvl != null && c.lvl != null && n.lvl > c.lvl;
@@ -962,6 +976,7 @@ function checkFriend(f){
       f.chk = { date: d, lvl: n.lvl, xp: n.xp, level: n.level, left: n.left };
       f.snaps = (f.snaps || []).filter(s => s.date !== d); f.snaps.push({ date: d, ...n });
       save(); render();
+      if (act === 'next') navOpen('check', go);
     });
   const xi = dlgForm.xp, xh = document.getElementById('xpHint');
   const upd = () => { const raw = xi.value.replace(/[^0-9]/g, ''); xh.textContent = raw.length > XP_DIGITS ? `→ gespeichert als ${String(xpS(raw)).padStart(XP_DIGITS, '0')}` : ''; };
@@ -1684,16 +1699,48 @@ function drawMap(D){
 
 /* ===================== Dialog-Helfer ===================== */
 let dlgCb = null;
+/* Blättern zwischen Einträgen in der Reihenfolge der aktuellen Liste (Suche, Filter, Sortierung) */
+const NAV = { mons: [], friends: [] };
+const navList = kind => kind === 'check' ? NAV.friends : NAV[kind];
+function navBtns(kind, id){
+  const l = navList(kind), i = id == null ? -1 : l.indexOf(id);
+  if (i < 0 || l.length < 2) return '<span class="sp"></span>';
+  const pos = `<span class="note" style="white-space:nowrap">${i + 1} / ${l.length}</span>`;
+  if (kind === 'check') return `<span class="navb"><button class="b s" value="prev" formnovalidate ${i ? '' : 'disabled'} title="Vorheriger, ohne zu speichern (Alt + ←)">‹</button>${pos}<button class="b s" value="skip" formnovalidate ${i < l.length - 1 ? '' : 'disabled'} title="Nächster, ohne zu speichern (Alt + →)">Überspringen ›</button><button class="b s p" value="next" ${i < l.length - 1 ? '' : 'disabled'} title="Prüfung speichern und zum nächsten">Speichern &amp; weiter ›</button></span>`;
+  return `<span class="navb"><button class="b s" value="prev" ${i ? '' : 'disabled'} title="Vorheriger (Alt + ←) – Änderungen werden gespeichert">‹</button>${pos}<button class="b s" value="next" ${i < l.length - 1 ? '' : 'disabled'} title="Nächster (Alt + →) – Änderungen werden gespeichert">›</button></span>`;
+}
+function navTarget(kind, id, act){
+  if (act !== 'prev' && act !== 'next' && act !== 'skip') return undefined;
+  const l = navList(kind), i = l.indexOf(id), j = i + (act === 'prev' ? -1 : 1);
+  return i >= 0 && j >= 0 && j < l.length ? l[j] : undefined;
+}
+function navOpen(kind, id){
+  if (id === undefined) return;
+  setTimeout(() => {
+    if (kind === 'mons'){ const p = S.pokemon.find(x => x.id === id); if (p) editMon(p); }
+    else { const f = S.friends.find(x => x.id === id); if (f) (kind === 'check' ? checkFriend : editFriend)(f); }
+  }, 0);
+}
+const fdKey = fd => JSON.stringify([...fd.entries()].map(([k, v]) => [k, typeof v === 'string' ? v : (v && v.name) || '']));
+let dlgSnap = '';
 function openDlg(title, body, extraBtns, cb){
   dlgT.innerHTML = title; dlgB.innerHTML = body;
   dlgF.innerHTML = `${extraBtns}<button class="b" value="cancel" formnovalidate>Abbrechen</button><button class="b p" value="ok">Speichern</button>`;
-  dlgCb = cb; dlg.showModal();
+  dlgCb = cb; if (!dlg.open) dlg.showModal();
   const first = dlgB.querySelector('input:not([type=checkbox]),select'); if (first) first.focus();
+  // Ausgangsstand merken (nachdem die Aufrufer ihre Felder vorbelegt haben), um Änderungen zu erkennen
+  setTimeout(() => { dlgSnap = fdKey(new FormData(dlgForm)); }, 0);
 }
+dlg.addEventListener('keydown', e => {
+  if (!e.altKey || (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight')) return;
+  const b = dlgF.querySelector(e.key === 'ArrowLeft' ? 'button[value=prev]' : 'button[value=next]:not(.p), button[value=skip]');
+  if (b && !b.disabled){ e.preventDefault(); b.click(); }
+});
 dlgForm.addEventListener('submit', e => {
   const act = e.submitter?.value;
   if (act === 'cancel') return;
-  if (dlgCb) dlgCb(new FormData(dlgForm), act);
+  const fd = new FormData(dlgForm);
+  if (dlgCb) dlgCb(fd, act, fdKey(fd) !== dlgSnap);
 });
 
 /* ===================== Theme & Start ===================== */
