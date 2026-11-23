@@ -105,6 +105,15 @@ dialog::backdrop{background:rgba(10,15,30,.5)}
 /* Schwebender Hinzufügen-Knopf (rechts unten, links unten liegt das ☁︎-Feld des Syncs) */
 .fab{position:fixed;right:calc(18px + env(safe-area-inset-right));bottom:calc(18px + env(safe-area-inset-bottom));z-index:15;width:56px;height:56px;border-radius:50%;border:0;background:var(--acc);color:#fff;font-size:30px;line-height:1;cursor:pointer;box-shadow:0 4px 14px rgba(20,40,120,.35);display:flex;align-items:center;justify-content:center;transition:transform .15s}
 .fab:hover{transform:scale(1.07)}
+/* Poke-Genie-Abgleich */
+.rvlist{display:grid;gap:10px}
+.rv.dec{border-color:var(--good)}
+.rv .pic{width:84px;height:84px}
+.rv select{max-width:340px;min-width:200px}
+.rv select.decided{border-color:var(--good);background:#e7f7ee;color:#16774a}
+table.rvt{margin-top:8px;font-size:13px}
+table.rvt td.pick{background:#e7f7ee;font-weight:700;color:#16774a}
+@media (max-width:640px){.rv > .row{flex-wrap:wrap}.rv select{max-width:100%;width:100%}}
 .fab[hidden]{display:none}
 main{padding-bottom:90px}
 
@@ -164,17 +173,24 @@ function idbOpen(){
     r.onblocked = () => rej(new Error('Datenbank blockiert – bitte andere Tabs dieses Tools schließen'));
   });
 }
-function idbGet(){
+function idbGet(key = DB_REC){
   return new Promise((res, rej) => {
-    const t = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(DB_REC);
+    const t = db.transaction(DB_STORE, 'readonly').objectStore(DB_STORE).get(key);
     t.onsuccess = () => res(t.result); t.onerror = () => rej(t.error);
   });
 }
-function idbPut(val){
+function idbPut(val, key = DB_REC){
   return new Promise((res, rej) => {
     const tx = db.transaction(DB_STORE, 'readwrite');
-    tx.objectStore(DB_STORE).put(val, DB_REC);
+    tx.objectStore(DB_STORE).put(val, key);
     tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error || new Error('Schreibvorgang abgebrochen'));
+  });
+}
+function idbDel(key){
+  return new Promise((res, rej) => {
+    const tx = db.transaction(DB_STORE, 'readwrite');
+    tx.objectStore(DB_STORE).delete(key);
+    tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
   });
 }
 const plain = o => JSON.parse(JSON.stringify(o));
@@ -251,6 +267,7 @@ async function initStore(){
   try{ for (const k of ['go-organizer-dex', 'go-organizer-dex-v2']) localStorage.removeItem(k); }catch(e){}
   if (S.pokemon.some(p => 'pvp' in p)){ S.pokemon.forEach(p => delete p.pvp); save(); }
   if (migrateFriends() | migrateXpDigits()) save();
+  try{ REV = (await idbGet(REV_KEY)) || null; if (REV) REV.done ||= {}, REV.dec ||= {}; }catch(e){ REV = null; }
   try{ if (navigator.storage?.persist) PERSISTED = (await navigator.storage.persisted()) || (await navigator.storage.persist()); }catch(e){}
 }
 function exportJSON(suffix){
@@ -521,7 +538,7 @@ function render(){
   refreshLists();
   const fab = document.getElementById('fabAdd');
   fab.hidden = TAB !== 'mons'; fab.onclick = () => editMon();
-  ({ mons: renderMons, friends: renderFriends, cards: renderCards, viv: renderViv, data: renderData })[TAB]();
+  ({ mons: renderMons, friends: renderFriends, cards: renderCards, viv: renderViv, data: renderData, review: renderReview })[TAB]();
 }
 function refreshLists(){
   const cos = new Set(COSTUME_LABELS);
@@ -586,8 +603,9 @@ function renderMons(){
       <div class="card"><b>${all.filter(p => p.bg || p.bgKey).length}</b><span class="muted">Hintergründe</span></div>
       <div class="card"><b>${all.filter(p => p.size === 'XXL' || p.size === 'XXS').length}</b><span class="muted">XXL/XXS</span></div>
     </div>
+    ${revBanner()}
     <div class="bar">
-      <button class="b" id="pgImp">Poke Genie importieren</button>
+      <button class="b" id="pgImp">Poke Genie abgleichen</button>
       <input id="q" placeholder="Suchen, z. B. Evoli & Blitza & Flamara" title="Mehrere Suchbegriffe mit & , ; oder | trennen – angezeigt wird, was zu irgendeinem passt. Mit + verknüpfen, wenn alles zutreffen soll (z. B. Glurak + Luftschnitt). In Anführungszeichen = genauer Name (z. B. &quot;Mew&quot; ohne Mewtu)." value="${esc(F.q)}" style="flex:1;min-width:180px">
       <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['pgmissing', 'Nicht mehr im Export'], ['form', 'Mit Form'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="sort">${[['new', 'Neueste'], ['dex', 'Pokédex-Nr.'], ['cp', 'WP'], ['iv', 'IV'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
@@ -596,6 +614,7 @@ function renderMons(){
       ${list.length > F.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="more">Weitere ${Math.min(120, list.length - F.lim)} anzeigen (${list.length - F.lim} übrig)</button> <button class="b" id="allm">Alle anzeigen</button></div>` : ''}`
       : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Pokémon eingetragen – trag welche ein oder importiere deinen Poke-Genie-Export.'}</div>`}`;
   pgImp.onclick = openPgImport;
+  const rg = document.getElementById('revGo'); if (rg) rg.onclick = () => { TAB = 'review'; document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('on')); render(); window.scrollTo(0, 0); };
   const more = document.getElementById('more'); if (more) more.onclick = () => { F.lim += 120; renderMons(); };
   const allm = document.getElementById('allm'); if (allm) allm.onclick = () => { F.lim = 1e6; renderMons(); };
   const qi = document.getElementById('q');
@@ -1035,7 +1054,7 @@ function renderData(){
       </div>
       <h3>Poke Genie</h3>
       <p class="note">CSV-Export aus Poke Genie einlesen. Erneute Importe aktualisieren bestehende Einträge, ohne deine eigenen Angaben zu überschreiben.</p>
-      <button class="b" id="pgImp2">Poke Genie importieren</button>
+      <button class="b" id="pgImp2">Poke Genie abgleichen</button>
       <h3>Freunde aus Notion</h3>
       <p class="note">Einmalige Übernahme aus der früheren Notion-Datenbank (vorbereitete JSON-Datei oder Notion-CSV-Export). Pokémon bleiben unverändert.</p>
       <button class="b" id="impF2">Freunde importieren</button>
@@ -1124,66 +1143,330 @@ function pgRow(r){
     src: 'pokegenie'
   };
 }
-function importPokeGenie(text, removeMissing){
-  const rows = parseCSVText(text);
-  if (!rows.length || !('Pokemon-Nummer' in rows[0] || 'Pokemon Number' in rows[0])) throw new Error('Das sieht nicht nach einem Poke-Genie-Export aus.');
-  const pool = {};
-  S.pokemon.forEach(p => { if (p.pgKey) (pool[p.pgKey] ||= []).push(p); });
-  const seen = new Set(); let added = 0, updated = 0, removed = 0;
-  // Werte aus Poke Genie werden überschrieben, eigene Felder (Shiny, Kostüm, Hintergrund, Größe, Notizen …) bleiben
-  for (const r of rows){
-    const n = pgRow(r);
-    const cands = (pool[n.pgKey] || []).filter(p => !seen.has(p.id));
-    let m = null;
-    if (cands.length) m = cands.sort((a, b) => ((a.dex === n.dex ? 0 : 1) - (b.dex === n.dex ? 0 : 1)) || Math.abs((a.cp || 0) - n.cp) - Math.abs((b.cp || 0) - n.cp))[0];
-    if (m){
-      const { added: _a, pgFav, form, ...upd } = n;
-      if (!m.caught && !upd.caught) delete upd.caught;
-      // Form nur übernehmen, wenn du sie nicht selbst geändert hast (pgForm = zuletzt aus Poke Genie übernommen).
-      // Ältere Einträge ohne pgForm: eine vorhandene Form bleibt beim ersten Mal stehen.
-      const own = m.pgForm === undefined ? !!m.form : m.form !== m.pgForm;
-      if (!own) m.form = form;
-      m.pgForm = form;
-      Object.assign(m, upd); delete m.pgMissing; seen.add(m.id); updated++;
-    } else {
-      const { pgFav, ...rest } = n;
-      const p = { id: uid(), ...rest, pgForm: rest.form, fav: pgFav };
-      S.pokemon.push(p); seen.add(p.id); added++;
-    }
-  }
-  let marked = 0;
-  if (removeMissing){
-    const keep = [];
-    for (const p of S.pokemon){
-      if (p.src !== 'pokegenie' || seen.has(p.id)){ keep.push(p); continue; }
-      // Mit eigenen Angaben nie automatisch löschen, nur markieren
-      if (hasOwnData(p)){ if (!p.pgMissing) p.pgMissing = today(); keep.push(p); marked++; }
-      else removed++;
-    }
-    S.pokemon = keep;
-  }
-  return { total: rows.length, added, updated, removed, marked };
-}
 // Angaben, die nur du einträgst (Poke Genie exportiert sie nicht)
 const hasOwnData = p => !!(p.shiny || p.specialMove || p.costume || p.costumeKey || p.bg || p.bgKey || p.size || p.dyna || p.viv || p.nick || p.tags || (p.notes && p.notes.trim()) || p.fav);
+
+/* ===================== Poke-Genie-Abgleich (Prüfung vor dem Übernehmen) ===================== */
+// Ein Backup wird nie direkt übernommen. Das Tool stellt den aktuellen Stand dem Backup gegenüber,
+// du entscheidest jedes Pokémon einzeln (nichts ist vorausgewählt), erst „Ausgewählte übernehmen“ schreibt.
+// Der Prüf-Stand liegt als eigener Eintrag „pgReview“ in der IndexedDB dieses Tools (nicht synchronisiert)
+// und wird nach dem Abschließen oder Verwerfen gelöscht.
+const EVO = [0,1,1,1,2,2,2,3,3,3,4,4,4,5,5,5,6,6,6,7,7,8,8,9,9,10,10,11,11,12,12,12,13,13,13,14,14,15,15,16,16,17,17,18,18,18,19,19,20,20,21,21,22,22,23,23,24,24,25,25,26,26,26,27,27,27,28,28,28,29,29,29,30,30,31,31,31,32,32,33,33,34,34,35,36,36,37,37,38,38,39,39,40,40,40,41,42,42,43,43,44,44,45,45,46,46,47,47,48,49,49,50,50,51,52,53,54,54,55,55,56,56,57,58,59,60,61,62,63,64,64,65,66,67,67,67,67,68,69,69,70,70,71,72,73,74,75,76,76,76,77,78,79,79,79,80,80,80,81,81,81,82,82,83,83,84,84,85,85,17,86,86,10,14,16,87,87,88,88,89,89,89,18,90,90,91,26,92,92,92,93,94,94,95,96,96,67,67,97,33,98,99,100,101,102,102,103,104,41,105,105,106,58,107,108,109,110,110,111,111,112,112,113,114,114,115,116,117,118,118,54,119,119,68,120,121,47,47,59,60,61,122,51,123,124,125,126,126,126,127,128,129,130,130,130,131,131,131,132,132,132,133,133,134,134,135,135,135,135,135,136,136,136,137,137,137,138,138,139,139,140,140,140,141,141,142,142,143,143,143,144,144,144,145,145,145,146,146,90,147,148,148,149,150,151,151,151,152,152,153,153,154,155,156,157,158,159,159,160,160,161,161,162,162,163,164,164,165,166,166,166,167,167,168,168,169,170,171,172,173,173,174,174,175,175,176,176,177,177,178,178,179,180,181,181,182,182,183,184,185,100,186,186,187,187,187,188,188,188,189,190,191,191,191,192,192,192,193,194,195,196,197,198,199,200,201,202,203,203,203,204,204,204,205,205,205,206,206,206,207,207,208,208,209,209,209,158,158,211,211,212,212,213,213,213,214,214,215,216,216,217,217,218,218,93,219,219,220,220,98,97,221,221,184,223,223,224,224,91,57,51,228,229,230,230,230,72,232,232,233,233,234,234,235,235,236,237,237,116,239,239,109,34,48,50,52,60,61,87,95,67,67,104,112,68,140,147,182,186,240,241,242,243,244,245,246,247,248,249,250,250,252,253,254,255,256,256,256,257,257,257,258,258,258,259,259,260,260,260,261,261,262,262,263,263,264,264,265,265,266,266,266,267,267,268,268,268,269,269,270,270,271,272,272,272,273,273,273,274,275,276,276,276,277,277,277,278,278,279,279,280,281,281,281,282,282,283,284,284,285,285,286,287,287,288,288,289,289,290,290,291,291,292,292,293,293,293,294,294,294,295,295,296,296,296,297,297,298,299,299,300,300,301,301,302,303,303,304,304,305,305,305,306,306,306,307,307,308,308,308,309,309,309,310,310,311,312,312,313,314,314,315,316,316,317,317,318,319,319,320,320,321,322,323,323,323,324,324,325,326,327,328,329,330,331,332,333,334,335,336,337,337,337,338,338,338,339,339,339,340,340,341,341,341,342,342,342,343,343,344,344,344,345,345,346,346,347,348,348,349,349,349,350,350,351,351,352,352,353,353,354,354,355,355,356,356,357,357,358,358,67,359,360,361,362,362,362,363,364,364,365,365,366,366,367,367,368,369,370,371,372,373,374,374,374,375,375,375,376,376,376,377,377,377,378,378,379,379,379,380,380,381,382,382,383,383,384,385,385,386,386,387,387,388,388,389,389,390,390,391,391,392,392,392,393,394,395,396,396,397,397,398,399,399,400,401,402,403,404,405,406,407,408,408,408,409,410,411,412,413,413,413,413,414,415,416,417,418,419,420,421,422,423,424,424,425,426,427,428,428,430,430,430,431,431,431,432,432,432,433,433,434,434,434,435,435,435,436,436,437,437,438,438,439,439,440,440,441,441,441,442,442,442,443,443,444,445,445,446,446,447,447,448,448,449,449,450,450,450,451,451,451,134,22,113,35,57,287,452,452,453,454,455,455,456,457,458,459,460,460,461,462,463,464,465,466,466,466,467,468,469,470,470,471,472,473,474,475,476,120,58,110,280,109,106,477,478,478,478,479,479,479,480,480,480,481,481,482,482,483,483,484,484,484,485,485,486,486,487,487,487,488,489,489,489,490,490,490,491,491,492,492,493,493,494,494,495,495,496,496,497,498,498,499,499,500,500,501,501,501,502,502,503,504,504,505,505,506,507,508,508,509,509,510,511,511,512,513,514,24,96,101,103,317,515,516,517,518,519,520,521,522,523,524,525,526,527,527,527,528,528,529,530,531,532,533,534,535,536,537,538,442,539,539,540,541,542,543,465,442,544,545,547,546,548,549];   // Dex → Entwicklungsreihe (PokéAPI), 0 = unbekannt
+const REV_KEY = 'pgReview';
+let REV = null;
+const REVUI = { g: 'updated', q: '', st: 'open', lim: 40, sticky: new Set() };   // sticky: gerade entschiedene bleiben sichtbar
+// Felder, die Poke Genie liefert und die verglichen werden
+const PG_FIELDS = [
+  ['dex', 'Pokémon'], ['form', 'Form'], ['gender', 'Geschlecht'], ['align', 'Crypto/Erlöst'], ['lucky', 'Glücks'],
+  ['cp', 'WP'], ['hp', 'KP'], ['level', 'Level'], ['ivA', 'IV Angriff'], ['ivD', 'IV Verteidigung'], ['ivH', 'IV KP'],
+  ['fast', 'Sofortattacke'], ['c1', 'Ladeattacke 1'], ['c2', 'Ladeattacke 2'],
+  ['caught', 'Gefangen am'], ['height', 'Höhe (m)'], ['weight', 'Gewicht (kg)'], ['fav', 'Favorit']
+];
+const pgVal = (n, f) => f === 'fav' ? n.pgFav : n[f];
+const revNorm = v => (v == null || v === '' || v === false) ? '' : typeof v === 'number' ? String(Math.round(v * 1000) / 1000) : String(v);
+function revFmt(f, v){
+  if (v == null || v === '' || v === false) return f === 'lucky' || f === 'fav' ? 'Nein' : '–';
+  if (v === true) return 'Ja';
+  if (f === 'dex') return `#${v} ${esc(nameOf(v) || '')}`;
+  if (f === 'gender') return v === 'm' ? '♂' : v === 'f' ? '♀' : esc(v);
+  if (f === 'align') return v === 'shadow' ? 'Crypto' : v === 'purified' ? 'Erlöst' : esc(v);
+  if (f === 'caught') return fmtDate(v);
+  if (typeof v === 'number') return v.toLocaleString('de-DE');
+  return esc(v);
+}
+const ownForm = p => p.pgForm === undefined ? !!p.form : (p.form || '') !== (p.pgForm || '');
+function revDiffs(p, n){
+  const out = [];
+  for (const [f, label] of PG_FIELDS){
+    const tv = p[f], pv = pgVal(n, f);
+    if (revNorm(tv) === revNorm(pv)) continue;
+    // Vorschlag pro Feld (nur relevant, wenn du übernimmst): Backup, außer das Backup ist leer,
+    // die Form wurde von dir geändert oder es geht um den Favoriten
+    const def = (revNorm(pv) === '' && revNorm(tv) !== '') || (f === 'form' && ownForm(p)) || f === 'fav' ? 'tool' : 'pg';
+    out.push({ f, label, tv, pv, def });
+  }
+  return out;
+}
+// Einfacher Prüfwert, um zu erkennen, ob sich ein Eintrag seit deiner Entscheidung geändert hat
+function hashOf(o){ const s = JSON.stringify(o || null); let h = 2166136261; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return (h >>> 0).toString(36); }
+function revScore(p, n){
+  let score = 0; const why = [];
+  const scan = k => (k || '').split('|')[0];
+  if (p.pgKey && scan(p.pgKey) === scan(n.pgKey)){ score += 4; why.push('gleiches Scan-Datum'); }
+  const ivs = ['ivA', 'ivD', 'ivH'];
+  if (n.ivA != null && ivs.every(k => p[k] === n[k])){ score += 3; why.push('gleiche IVs'); }
+  else if (p.align === 'shadow' && n.align === 'purified' && ivs.every(k => p[k] != null && Math.min(15, p[k] + 2) === n[k])){ score += 3; why.push('IVs passen zum Erlösen'); }
+  if (!p.pgKey){ score += 1; why.push('Handeintrag'); }
+  if (p.dex === n.dex) score += 1; else why.push('andere Entwicklungsstufe');
+  if (p.gender && p.gender === n.gender) score += 0.5;
+  return { score, why };
+}
+function revCompute(){
+  const rows = REV.rows;
+  const byKey = {};
+  S.pokemon.forEach(p => { if (p.pgKey) (byKey[p.pgKey] ||= []).push(p); });
+  const used = new Set(), exact = new Map();
+  rows.forEach((n, i) => {
+    const c = (byKey[n.pgKey] || []).filter(p => !used.has(p.id));
+    if (!c.length) return;
+    c.sort((a, b) => ((a.dex === n.dex ? 0 : 1) - (b.dex === n.dex ? 0 : 1)) || Math.abs((a.cp || 0) - (n.cp || 0)) - Math.abs((b.cp || 0) - (n.cp || 0)));
+    exact.set(i, c[0]); used.add(c[0].id);
+  });
+  const updated = [], unchanged = [], unmatched = [];
+  rows.forEach((n, i) => {
+    const p = exact.get(i);
+    if (p){ const d = revDiffs(p, n); (d.length ? updated : unchanged).push({ key: 'u:' + p.id, i, p, n, d }); }
+    else unmatched.push({ key: 'r:' + i, i, n });
+  });
+  const rest = S.pokemon.filter(p => !used.has(p.id));
+  for (const u of unmatched){
+    const ch = EVO[u.n.dex];
+    u.cands = rest.filter(p => p.dex === u.n.dex || (ch && EVO[p.dex] === ch))
+      .map(p => ({ p, ...revScore(p, u.n) }))
+      .sort((a, b) => b.score - a.score || Math.abs((a.p.cp || 0) - (u.n.cp || 0)) - Math.abs((b.p.cp || 0) - (u.n.cp || 0)));
+  }
+  const done = k => REV.done[k];
+  // Ziele, die du schon für eine Zusammenführung gewählt hast
+  const targets = new Map();
+  for (const u of unmatched){ const d = REV.dec[u.key]; if (d && d.a === 'merge' && !done(u.key)) targets.set(d.t, u); }
+  return {
+    updated: updated.filter(x => !done(x.key)), unchanged,
+    cand: unmatched.filter(u => u.cands.length && !done(u.key)),
+    fresh: unmatched.filter(u => !u.cands.length && !done(u.key)),
+    missing: rest.filter(p => p.pgKey && !done('m:' + p.id)).map(p => ({ key: 'm:' + p.id, p })),
+    manual: rest.filter(p => !p.pgKey),
+    targets, total: rows.length
+  };
+}
+async function revSave(){
+  if (STORE_MODE !== 'idb') return;
+  try{ if (REV) await idbPut(plain(REV), REV_KEY); else await idbDel(REV_KEY); }
+  catch(e){ storeBanner(`Prüf-Stand konnte nicht gespeichert werden (${e.message}). Deine Entscheidungen gehen beim Neuladen verloren.`); }
+}
+let revSaveT = null;
+const revSaveSoon = () => { clearTimeout(revSaveT); revSaveT = setTimeout(revSave, 400); };
+
 function openPgImport(){
-  openDlg('Poke-Genie-Export importieren', `
-    <p>In Poke Genie: <b>Einstellungen → Exportieren</b> (CSV) und die Datei hier auswählen.</p>
+  openDlg('Poke-Genie-Backup abgleichen', `
+    <p style="margin-top:0">In Poke Genie: <b>Einstellungen → Exportieren</b> (CSV) und die Datei hier auswählen.</p>
     <label class="fl">CSV-Datei<input type="file" name="file" accept=".csv,text/csv" required></label>
-    <label class="chk" style="margin-top:12px"><input type="checkbox" name="rm"> Importierte Pokémon entfernen, die nicht mehr im Export sind (z. B. verschickt oder getauscht)</label>
-    <p class="note" style="margin-top:2px">Pokémon mit eigenen Angaben (Shiny, Kostüm, Hintergrund, Spezialattacke, Notizen …) werden dabei nie gelöscht, sondern als „Nicht mehr im Export“ markiert – du entscheidest selbst.</p>
-    <p class="note">Bei einem erneuten Import werden bereits importierte Pokémon wiedererkannt und aktualisiert (WP, Level, Attacken, Entwicklung …). Was du selbst einträgst – Shiny, Spezialattacke, Kostüm, Hintergrund, Größenklasse, Vivillon-Muster, Spitzname, Tags, Notizen – bleibt erhalten, denn das exportiert Poke Genie nicht. Eine Form, die du selbst geändert hast, wird nicht überschrieben.</p>
-    <p class="note">Tipp: Vorher unter „Daten“ eine Sicherung exportieren.</p>`, '',
+    <p class="note">Es wird noch <b>nichts geändert</b>. Du bekommst eine Übersicht, die den aktuellen Stand dem Backup gegenüberstellt, und entscheidest jedes Pokémon einzeln. Erst „Ausgewählte übernehmen“ schreibt – vorher wird automatisch eine JSON-Sicherung heruntergeladen.</p>
+    <p class="note">Bitte nur auf <b>einem</b> Gerät abgleichen und bis zum Ende prüfen. Dein Zwischenstand bleibt auf diesem Gerät gespeichert, auch nach dem Neuladen.</p>
+    ${REV ? `<p class="note" style="color:var(--bad)">Es läuft bereits eine Prüfung (${esc(REV.file)}). Sie wird durch die neue Datei ersetzt.</p>` : ''}`, '',
     async fd => {
       const f = fd.get('file'); if (!f || !f.size) return;
       try{
-        const res = importPokeGenie(await f.text(), !!fd.get('rm'));
-        const ok = await save();
-        render();
-        if (!ok) return alert('Import eingelesen, aber Speichern fehlgeschlagen – siehe roter Hinweis oben.');
-        alert(`${res.total} Pokémon gelesen:\n• ${res.added} neu\n• ${res.updated} aktualisiert${res.removed ? `\n• ${res.removed} entfernt` : ''}${res.marked ? `\n• ${res.marked} als „Nicht mehr im Export“ markiert (mit eigenen Angaben – Filter „Nicht mehr im Export“)` : ''}`);
-      }catch(err){ alert('Import fehlgeschlagen: ' + err.message); }
+        const raw = parseCSVText(await f.text());
+        if (!raw.length || !('Pokemon-Nummer' in raw[0] || 'Pokemon Number' in raw[0])) throw new Error('Das sieht nicht nach einem Poke-Genie-Export aus.');
+        if (REV && !confirm('Die laufende Prüfung mit allen bisherigen Entscheidungen verwerfen?')) return;
+        REV = { file: f.name, created: new Date().toISOString(), rows: raw.map(pgRow), dec: {}, done: {} };
+        await revSave();
+        Object.assign(REVUI, { g: 'updated', q: '', st: 'open', lim: 40 }); REVUI.sticky.clear();
+        TAB = 'review'; document.querySelectorAll('#tabs button').forEach(b => b.classList.remove('on'));
+        render(); window.scrollTo(0, 0);
+      }catch(err){ alert('Einlesen fehlgeschlagen: ' + err.message); }
     });
+}
+
+/* ---------- Ansicht ---------- */
+function revBanner(){
+  if (!REV) return '';
+  const C = revCompute();
+  const open = C.updated.length + C.cand.length + C.fresh.length + C.missing.length;
+  return `<div class="card" style="border:2px solid var(--acc);margin-bottom:14px"><div class="row"><b class="sp">Poke-Genie-Abgleich läuft (${esc(REV.file)}): ${open} Einträge zu prüfen</b><button class="b p" id="revGo">Fortsetzen</button></div></div>`;
+}
+function revSummary(x){
+  const p = x;
+  const iv = p.ivA != null ? `${p.ivA}/${p.ivD}/${p.ivH}` : 'IV –';
+  const bits = [p.form ? '◆ ' + esc(p.form) : '', p.gender === 'm' ? '♂' : p.gender === 'f' ? '♀' : '', `WP ${p.cp ?? '–'}`, `Lv ${p.level ?? '–'}`, iv,
+    p.align === 'shadow' ? 'Crypto' : p.align === 'purified' ? 'Erlöst' : '', p.lucky ? 'Glücks' : ''].filter(Boolean).join(' · ');
+  const moves = [p.fast, p.c1, p.c2].filter(Boolean).map(esc).join(', ');
+  return `${bits}${moves ? `<br>${moves}` : ''}${p.caught ? `<br>gefangen ${fmtDate(p.caught)}` : ''}`;
+}
+function ownBadges(p){
+  const b = [];
+  if (p.nick) b.push('„' + esc(p.nick) + '“');
+  if (p.shiny) b.push('✨ Shiny'); if (p.costume || p.costumeKey) b.push('🎩 ' + esc(p.costume || costumeLabel(p.costumeKey)));
+  if (p.bg || p.bgKey) b.push('🖼 ' + esc(p.bgName || (p.bgKey ? bgLabel(p.bgKey) : 'Hintergrund')));
+  if (p.specialMove) b.push('⚡ Spezialattacke'); if (p.size) b.push(esc(p.size)); if (p.dyna) b.push(p.dyna === 'giga' ? 'Gigadynamax' : 'Dynamax');
+  if (p.viv) b.push('Vivillon: ' + esc(VIVMAP[p.viv]?.[1] || p.viv)); if (p.fav) b.push('★'); if (p.tags) b.push('# ' + esc(p.tags)); if (p.notes && p.notes.trim()) b.push('📝');
+  if (p.pgMissing) b.push('⚠ markiert seit ' + fmtDate(p.pgMissing));
+  return b.length ? `<div class="badges" style="justify-content:flex-start">${b.map(x => `<span class="bd">${x}</span>`).join('')}</div>` : '';
+}
+function diffTable(key, diffs, d, active){
+  if (!diffs.length) return '<p class="note" style="margin:6px 0 0">Keine abweichenden Poke-Genie-Werte.</p>';
+  const ch = f => (d && d.f && d.f[f.f]) || f.def;
+  return `<div style="overflow-x:auto"><table class="rvt"><tr><th>Feld</th><th>Im Tool</th><th>Im Backup</th><th>${active ? 'Übernehmen von' : ''}</th></tr>${diffs.map(x => `<tr>
+    <td>${x.label}</td><td class="${active && ch(x) === 'tool' ? 'pick' : ''}">${revFmt(x.f, x.tv)}</td><td class="${active && ch(x) === 'pg' ? 'pick' : ''}">${revFmt(x.f, x.pv)}</td>
+    <td>${active ? `<label class="chk"><input type="radio" name="f|${key}|${x.f}" data-fk="${key}" data-ff="${x.f}" value="tool" ${ch(x) === 'tool' ? 'checked' : ''}>Tool</label> <label class="chk"><input type="radio" name="f|${key}|${x.f}" data-fk="${key}" data-ff="${x.f}" value="pg" ${ch(x) === 'pg' ? 'checked' : ''}>Backup</label>` : ''}</td></tr>`).join('')}</table></div>`;
+}
+const decSel = (key, cur, opts) => `<select data-dec="${key}" class="${cur ? 'decided' : ''}"><option value="">– bitte entscheiden –</option>${opts.map(([v, l, dis]) => `<option value="${v}" ${cur === v ? 'selected' : ''} ${dis ? 'disabled' : ''}>${l}</option>`).join('')}</select>`;
+function revItem(g, x, C){
+  const d = REV.dec[x.key];
+  if (g === 'updated'){
+    const cur = d && d.a;
+    return `<div class="card rv ${cur ? 'dec' : ''}" data-key="${x.key}"><div class="row" style="align-items:flex-start">${monPic(x.p)}
+      <div class="sp"><b>${esc(x.p.nick || x.p.name)}</b>${x.p.nick ? ` <span class="muted">(${esc(x.p.name)})</span>` : ''}<div class="note">${revSummary(x.p)}</div>${ownBadges(x.p)}</div>
+      ${decSel(x.key, cur, [['accept', 'Übernehmen (Feldauswahl unten)'], ['reject', 'Tool-Stand behalten']])}</div>
+      ${diffTable(x.key, x.d, d, cur === 'accept')}${REV.stale && REV.stale[x.key] ? '<p class="note" style="color:var(--bad)">Inzwischen geändert – bitte neu prüfen.</p>' : ''}</div>`;
+  }
+  if (g === 'cand' || g === 'fresh'){
+    const cur = d ? (d.a === 'merge' ? 'merge:' + d.t : d.a) : '';
+    const opts = [['new', 'Neu anlegen'], ['skip', 'Nicht anlegen']];
+    for (const c of x.cands || []){
+      const other = C.targets.get(c.p.id);
+      const busy = other && other.key !== x.key;
+      opts.push(['merge:' + c.p.id, `Zusammenführen mit: ${c.p.nick ? '„' + c.p.nick + '“ ' : ''}${c.p.name}${c.p.form ? ' (' + c.p.form + ')' : ''} · WP ${c.p.cp ?? '–'} · IV ${c.p.ivA ?? '–'}/${c.p.ivD ?? '–'}/${c.p.ivH ?? '–'}${c.p.costume || c.p.costumeKey ? ' · 🎩' : ''}${c.why.length ? ' · ' + c.why.join(', ') : ''}${busy ? ' – schon anderem zugeordnet' : ''}`, busy]);
+    }
+    const tgt = d && d.a === 'merge' ? S.pokemon.find(p => p.id === d.t) : null;
+    return `<div class="card rv ${cur ? 'dec' : ''}" data-key="${x.key}"><div class="row" style="align-items:flex-start">${monPic({ dex: x.n.dex, form: x.n.form, gender: x.n.gender })}
+      <div class="sp"><span class="bd fm">Im Backup</span> <b>${esc(x.n.name)}</b><div class="note">${revSummary(x.n)}</div>
+      ${x.cands && x.cands.length ? `<div class="note">${x.cands.length} mögliche${x.cands.length === 1 ? 's' : ''} Gegenstück${x.cands.length === 1 ? '' : 'e'} im Tool</div>` : ''}</div>
+      ${decSel(x.key, cur, opts)}</div>
+      ${tgt ? `<div class="row" style="margin-top:8px;align-items:flex-start;border-top:1px solid var(--line);padding-top:8px">${monPic(tgt)}<div class="sp"><span class="bd">Im Tool</span> <b>${esc(tgt.nick || tgt.name)}</b><div class="note">${revSummary(tgt)}</div>${ownBadges(tgt)}<p class="note" style="margin:4px 0 0">Bleibt mit allen eigenen Angaben erhalten; aus dem Backup kommen nur die gewählten Felder.</p></div></div>${diffTable(x.key, revDiffs(tgt, x.n), d, true)}` : ''}
+      ${REV.stale && REV.stale[x.key] ? '<p class="note" style="color:var(--bad)">Inzwischen geändert – bitte neu prüfen.</p>' : ''}</div>`;
+  }
+  if (g === 'missing'){
+    const t = C.targets.get(x.p.id);
+    return `<div class="card rv ${d || t ? 'dec' : ''}" data-key="${x.key}"><div class="row" style="align-items:flex-start">${monPic(x.p)}
+      <div class="sp"><b>${esc(x.p.nick || x.p.name)}</b>${x.p.nick ? ` <span class="muted">(${esc(x.p.name)})</span>` : ''}<div class="note">${revSummary(x.p)}</div>${ownBadges(x.p)}</div>
+      ${t ? `<span class="note" style="max-width:220px">Wird mit „${esc(t.n.name)} · WP ${t.n.cp ?? '–'}“ aus dem Backup zusammengeführt.</span>` : decSel(x.key, d && d.a, [['delete', 'Löschen'], ['keep', 'Behalten']])}</div>
+      ${REV.stale && REV.stale[x.key] ? '<p class="note" style="color:var(--bad)">Inzwischen geändert – bitte neu prüfen.</p>' : ''}</div>`;
+  }
+  // nur zur Info
+  const t = g === 'manual' ? C.targets.get(x.id) : null;
+  const p = g === 'unchanged' ? x.p : x;
+  return `<div class="card rv" style="padding:8px"><div class="row">${monPic(p)}<div class="sp"><b>${esc(p.nick || p.name)}</b><div class="note">${revSummary(p)}</div>${ownBadges(p)}${t ? `<div class="note">Wird mit „${esc(t.n.name)} · WP ${t.n.cp ?? '–'}“ aus dem Backup zusammengeführt.</div>` : ''}</div></div></div>`;
+}
+function revMatch(g, x, q){
+  if (!q) return true;
+  const ps = g === 'updated' || g === 'missing' || g === 'unchanged' ? [x.p] : g === 'manual' ? [x] : [x.n, ...(x.cands || []).map(c => c.p)];
+  const hay = ps.map(p => [p.name, p.nick, p.form, p.costume, p.notes, p.tags, '#' + p.dex].join(' ')).join(' ').toLowerCase();
+  return parseSearch(q).some(t => t.every(w => w.exact ? ps.some(p => [p.name, p.nick].filter(Boolean).map(s => s.toLowerCase()).includes(w.v)) : hay.includes(w.v)));
+}
+function renderReview(){
+  if (!REV){ TAB = 'mons'; document.querySelector('#tabs [data-t=mons]').classList.add('on'); return render(); }
+  const C = revCompute();
+  const G = [['updated', 'Aktualisiert', C.updated], ['cand', 'Mögliches Gegenstück', C.cand], ['fresh', 'Neu im Backup', C.fresh], ['missing', 'Nicht mehr im Backup', C.missing], ['unchanged', 'Unverändert', C.unchanged], ['manual', 'Handeinträge', C.manual]];
+  const info = g => g === 'unchanged' || g === 'manual';
+  const decided = l => l.filter(x => REV.dec[x.key]).length;
+  const toApply = G.filter(([g]) => !info(g)).reduce((s, [, , l]) => s + decided(l), 0);
+  const open = G.filter(([g]) => !info(g)).reduce((s, [, , l]) => s + l.length - decided(l), 0);
+  const cur = G.find(([g]) => g === REVUI.g) || G[0];
+  let list = cur[2].filter(x => revMatch(cur[0], x, REVUI.q.trim()));
+  if (!info(cur[0]) && REVUI.st === 'open') list = list.filter(x => !REV.dec[x.key] || REVUI.sticky.has(x.key));
+  if (!info(cur[0]) && REVUI.st === 'dec') list = list.filter(x => REV.dec[x.key]);
+  const bulk = { updated: [['accept', 'Backup übernehmen (Feld-Vorschläge)']], fresh: [['new', 'neu anlegen']], missing: [['delete', 'löschen'], ['keep', 'behalten']] }[cur[0]] || [];
+  main.innerHTML = `
+    <div class="card" style="margin-bottom:12px">
+      <div class="row"><h3 class="sp" style="margin:0">Poke-Genie-Abgleich</h3><button class="b" id="revBack">Zu den Pokémon</button></div>
+      <p class="note" style="margin:6px 0">Datei <b>${esc(REV.file)}</b> · eingelesen ${new Date(REV.created).toLocaleString('de-DE')} · ${C.total} Pokémon im Backup, ${S.pokemon.length} im Tool</p>
+      <p class="note" style="margin:0 0 8px">Nichts ist vorausgewählt. Übernommen wird nur, was du entschieden hast; der Rest bleibt für später offen.</p>
+      <div class="row"><b class="sp">${open} offen · ${toApply} entschieden</b>
+        <button class="b p" id="revApply" ${toApply ? '' : 'disabled'}>Ausgewählte übernehmen (${toApply})</button>
+        <button class="b d" id="revDrop">${open || toApply ? 'Prüfung verwerfen' : 'Prüfung abschließen'}</button></div>
+    </div>
+    <div class="bar" id="revTabs">${G.map(([g, l, arr]) => `<button class="b ${g === cur[0] ? 'p' : ''}" data-g="${g}">${l} <b>${info(g) ? arr.length : (arr.length - decided(arr)) + '/' + arr.length}</b></button>`).join('')}</div>
+    <p class="note" style="margin-top:0">${{
+      updated: 'Gleiches Pokémon (Scan-Datum, IVs, Geschlecht), aber andere Werte. „Übernehmen“: du wählst pro Feld, welche Seite gilt. Eigene Angaben (Kostüm, Hintergrund, Notizen …) bleiben immer.',
+      cand: 'Im Backup ohne exakten Treffer, aber mit möglichen Gegenstücken im Tool (gleiche Entwicklungsreihe). Nichts wird automatisch zusammengeführt.',
+      fresh: 'Im Backup, ohne Gegenstück im Tool.',
+      missing: 'Aus Poke Genie stammende Einträge, die im Backup fehlen.',
+      unchanged: 'In beiden Quellen, ohne jede Änderung – nichts zu tun.',
+      manual: 'Von dir eingetragen, ohne Gegenstück im Backup – bleiben unverändert.'
+    }[cur[0]]}</p>
+    <div class="bar">
+      <input id="revQ" placeholder="Suchen, z. B. Pikachu" value="${esc(REVUI.q)}" style="flex:1;min-width:160px">
+      ${info(cur[0]) ? '' : `<select id="revSt">${[['open', 'Nur offene'], ['dec', 'Nur entschiedene'], ['all', 'Alle']].map(([v, l]) => `<option value="${v}" ${REVUI.st === v ? 'selected' : ''}>${l}</option>`).join('')}</select>`}
+      ${list.length ? bulk.map(([a, l]) => `<button class="b" data-bulk="${a}">Alle ${list.length} angezeigten: ${l}</button>`).join('') : ''}
+      ${!info(cur[0]) && list.some(x => REV.dec[x.key]) ? `<button class="b" data-bulk="">Entscheidungen der angezeigten zurücksetzen</button>` : ''}
+    </div>
+    ${list.length ? `<div class="rvlist">${list.slice(0, REVUI.lim).map(x => revItem(cur[0], x, C)).join('')}</div>
+      ${list.length > REVUI.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="revMore">Weitere ${Math.min(40, list.length - REVUI.lim)} anzeigen (${list.length - REVUI.lim} übrig)</button></div>` : ''}`
+      : `<div class="empty">${cur[2].length ? 'Nichts in dieser Ansicht.' : 'Keine Einträge in dieser Gruppe.'}</div>`}`;
+  revBack.onclick = () => { TAB = 'mons'; document.querySelector('#tabs [data-t=mons]').classList.add('on'); render(); };
+  revTabs.onclick = e => { const b = e.target.closest('[data-g]'); if (!b) return; REVUI.g = b.dataset.g; REVUI.lim = 40; REVUI.sticky.clear(); renderReview(); };
+  revQ.oninput = e => { REVUI.q = e.target.value; REVUI.lim = 40; renderReview(); const n = document.getElementById('revQ'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
+  const st = document.getElementById('revSt'); if (st) st.onchange = e => { REVUI.st = e.target.value; REVUI.lim = 40; REVUI.sticky.clear(); renderReview(); };
+  const more = document.getElementById('revMore'); if (more) more.onclick = () => { REVUI.lim += 40; renderReview(); };
+  const tool = x => cur[0] === 'missing' || cur[0] === 'updated' ? x.p : null;
+  main.querySelectorAll('[data-bulk]').forEach(b => b.onclick = () => {
+    const a = b.dataset.bulk;
+    if (a && !confirm(`Für alle ${list.length} angezeigten Einträge „${b.textContent.replace(/^Alle \d+ angezeigten: /, '')}“ vormerken? Du kannst jeden danach noch einzeln ändern; übernommen wird erst mit „Ausgewählte übernehmen“.`)) return;
+    for (const x of list){
+      if (!a){ delete REV.dec[x.key]; continue; }
+      if (cur[0] === 'missing' && C.targets.get(x.p.id)) continue;
+      REV.dec[x.key] = { a, h: hashOf(tool(x)) }; REVUI.sticky.add(x.key);
+    }
+    revSaveSoon(); renderReview();
+  });
+  main.querySelectorAll('select[data-dec]').forEach(s => s.onchange = () => {
+    const key = s.dataset.dec, v = s.value;
+    REVUI.sticky.add(key);
+    if (REV.stale) delete REV.stale[key];
+    if (!v){ delete REV.dec[key]; }
+    else if (v.startsWith('merge:')){ const id = v.slice(6); REV.dec[key] = { a: 'merge', t: id, h: hashOf(S.pokemon.find(p => p.id === id)) }; }
+    else { const x = list.find(x => x.key === key); REV.dec[key] = { a: v, f: (REV.dec[key] && REV.dec[key].a === v) ? REV.dec[key].f : undefined, h: hashOf(x && tool(x)) }; }
+    revSaveSoon(); renderReview();
+  });
+  main.querySelectorAll('input[data-fk]').forEach(r => r.onchange = () => {
+    const d = REV.dec[r.dataset.fk]; if (!d) return;
+    (d.f ||= {})[r.dataset.ff] = r.value; revSaveSoon(); renderReview();
+  });
+  revApply.onclick = revApplyAll;
+  revDrop.onclick = async () => {
+    if ((open || toApply) && !confirm('Prüfung verwerfen? Alle Entscheidungen, die noch nicht übernommen wurden, gehen verloren. Deine Pokémon bleiben, wie sie jetzt sind.')) return;
+    REV = null; await revSave(); TAB = 'mons'; document.querySelector('#tabs [data-t=mons]').classList.add('on'); render();
+  };
+}
+
+/* ---------- Übernehmen ---------- */
+function applyFields(p, n, diffs, choice){
+  for (const x of diffs){
+    if (((choice && choice[x.f]) || x.def) !== 'pg') continue;
+    if (x.f === 'fav') p.fav = !!n.pgFav;
+    else if (x.f === 'dex'){ p.dex = n.dex; p.name = n.name; }
+    else p[x.f] = n[x.f];
+  }
+  p.pgKey = n.pgKey; p.src = 'pokegenie'; p.pgForm = n.form; delete p.pgMissing;
+}
+async function revApplyAll(){
+  const C = revCompute();
+  const n = [...C.updated, ...C.cand, ...C.fresh, ...C.missing].filter(x => REV.dec[x.key]).length;
+  if (!n || !confirm(`${n} Entscheidungen jetzt übernehmen?\n\nVorher wird automatisch eine JSON-Sicherung des aktuellen Stands heruntergeladen.`)) return;
+  exportJSON('vor-poke-genie-abgleich');
+  const res = { upd: 0, keep: 0, add: 0, merge: 0, skip: 0, del: 0, kept: 0, stale: [] };
+  const byId = id => S.pokemon.find(p => p.id === id);
+  // Hat sich der Tool-Eintrag seit deiner Entscheidung geändert (z. B. über den Sync), wird nichts übernommen
+  const stale = (x, d, p, label) => { if (p && d.h === hashOf(p)) return false; res.stale.push(label); (REV.stale ||= {})[x.key] = 1; delete REV.dec[x.key]; return true; };
+  const merged = new Set();
+  for (const x of C.updated){
+    const d = REV.dec[x.key]; if (!d) continue;
+    if (stale(x, d, x.p, x.p.nick || x.p.name)) continue;
+    if (d.a === 'accept'){ applyFields(x.p, x.n, revDiffs(x.p, x.n), d.f); res.upd++; } else res.keep++;
+    REV.done[x.key] = 1; delete REV.dec[x.key];
+  }
+  for (const x of [...C.cand, ...C.fresh]){
+    const d = REV.dec[x.key]; if (!d) continue;
+    if (d.a === 'new'){ const { pgFav, ...rest } = x.n; S.pokemon.push({ id: uid(), ...rest, fav: !!pgFav, pgForm: x.n.form }); res.add++; }
+    else if (d.a === 'merge'){
+      const p = byId(d.t);
+      if (!p || merged.has(p.id) || stale(x, d, p, x.n.name + ' (Zusammenführung)')) continue;
+      applyFields(p, x.n, revDiffs(p, x.n), d.f); merged.add(p.id); res.merge++;
+    } else res.skip++;
+    REV.done[x.key] = 1; delete REV.dec[x.key];
+  }
+  for (const x of C.missing){
+    const d = REV.dec[x.key]; if (!d || merged.has(x.p.id)) continue;
+    if (stale(x, d, x.p, x.p.nick || x.p.name)) continue;
+    if (d.a === 'delete'){ S.pokemon = S.pokemon.filter(p => p.id !== x.p.id); res.del++; } else { delete x.p.pgMissing; res.kept++; }
+    REV.done[x.key] = 1; delete REV.dec[x.key];
+  }
+  REVUI.sticky.clear();
+  const ok = await save(); await revSave(); render();
+  alert((ok ? 'Übernommen:' : 'Achtung: Speichern fehlgeschlagen – siehe roter Hinweis oben.') +
+    `\n• ${res.upd} aktualisiert, ${res.keep} Tool-Stand behalten\n• ${res.merge} zusammengeführt, ${res.add} neu angelegt, ${res.skip} nicht angelegt\n• ${res.del} gelöscht, ${res.kept} behalten` +
+    (res.stale.length ? `\n\n${res.stale.length} übersprungen, weil sie sich inzwischen geändert haben – bitte neu entscheiden:\n${res.stale.slice(0, 15).join(', ')}${res.stale.length > 15 ? ' …' : ''}` : ''));
 }
 
 /* ===================== Freunde-Import (Notion) ===================== */
