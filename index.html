@@ -61,7 +61,8 @@ button.d{color:var(--bad)}
 .badges{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:6px}
 .bd{font-size:11px;font-weight:700;padding:2px 6px;border-radius:99px;background:var(--acc2);color:var(--acc)}
 .bd.sh{background:#fff3c4;color:#8a6500}.bd.cr{background:#ece3ff;color:#5b2fb5}.bd.lu{background:#fff0c2;color:#9a6c00}
-.bd.er{background:#e2f6ff;color:#0b6c91}.bd.dy{background:#ffe2ea;color:#b0244b}.bd.mg{background:#efe4ff;color:#6a2fb8}
+.bd.er{background:#e2f6ff;color:#0b6c91}.bd.dy{background:#ffe2ea;color:#b0244b}.bd.mg{background:#efe4ff;color:#6a2fb8}.bd.adv{background:#fff4d6;color:#8a5a00}
+.mnote{font-size:12px;color:var(--muted);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:center}
 .bd.bg{background:#e3f7e9;color:#1b7a43}.bd.fm{background:#e6ecff;color:#2f4fb3}.bd.mv{background:#fde4cf;color:#a3470d}.bd.sz{background:#f0e6da;color:#7a4b1b}
 .ivrow{display:flex;justify-content:space-between;font-size:13px;margin-top:6px;color:var(--muted)}
 .ivp{font-weight:800;color:var(--ink)}
@@ -132,6 +133,7 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
     <button data-t="friends">Freunde</button>
     <button data-t="cards">Postkarten</button>
     <button data-t="viv">Vivillon</button>
+    <button data-t="map">Karte</button>
     <button data-t="data">Daten</button>
   </nav>
 </header>
@@ -145,6 +147,7 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 <datalist id="dlMoves"></datalist>
 <datalist id="dlBg"></datalist>
 <datalist id="dlForms"></datalist>
+<datalist id="dlPlaces"></datalist>
 <datalist id="dlRegion"></datalist>
 
 <!-- GitHub-Sync (gemeinsam für alle Tools, Einstellungen auf der Startseite) -->
@@ -155,7 +158,7 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 // localStorage enthält nur noch das Theme ("go-organizer-theme").
 const LEGACY_KEY = 'go-organizer-v1';
 const DB_NAME = 'pokemon-go-tool', DB_STORE = 'kv', DB_REC = 'state';
-const blank = () => ({ pokemon: [], friends: [], postcards: [], regionHints: {}, version: 1 });
+const blank = () => ({ pokemon: [], friends: [], postcards: [], regionHints: {}, places: {}, version: 1 });
 let S = blank();
 let SYNC = null;              // GitHub-Sync, siehe initSync()
 let STORE_MODE = 'idb';      // 'idb' | 'readonly' (IndexedDB fehlt: nur lesen/exportieren) | 'locked'
@@ -535,7 +538,7 @@ function render(){
   refreshLists();
   const fab = document.getElementById('fabAdd');
   fab.hidden = TAB !== 'mons'; fab.onclick = () => editMon();
-  ({ mons: renderMons, friends: renderFriends, cards: renderCards, viv: renderViv, data: renderData, review: renderReview })[TAB]();
+  ({ mons: renderMons, friends: renderFriends, cards: renderCards, viv: renderViv, data: renderData, review: renderReview, map: renderMap })[TAB]();
 }
 function refreshLists(){
   const cos = new Set();
@@ -546,6 +549,9 @@ function refreshLists(){
   document.getElementById('dlMoves').innerHTML = [...moves].sort().map(c => `<option value="${esc(c)}">`).join('');
   const reg = new Set(Object.keys(VIV_HINTS).map(k => k[0].toUpperCase() + k.slice(1)));
   S.postcards.forEach(c => c.region && reg.add(c.region));
+  const pls = new Set(Object.values(S.places || {}).map(x => x.name));
+  S.pokemon.forEach(p => { if (p.location) pls.add(p.location.trim()); if (p.myLocation) pls.add(p.myLocation.trim()); });
+  document.getElementById('dlPlaces').innerHTML = [...pls].filter(Boolean).sort((a, b) => a.localeCompare(b, 'de')).map(c => `<option value="${esc(c)}">`).join('');
   document.getElementById('dlRegion').innerHTML = [...reg].sort().map(c => `<option value="${esc(c)}">`).join('');
 }
 const ivPct = p => (p.ivA == null || p.ivD == null || p.ivH == null) ? null : Math.round((p.ivA + p.ivD + p.ivH) / 45 * 100);
@@ -575,6 +581,10 @@ function renderMons(){
   if (fl === 'dyna') list = list.filter(p => p.dyna);
   if (fl === 'move') list = list.filter(p => p.specialMove);
   if (fl === 'mega') list = list.filter(p => p.mega);
+  if (fl === 'adv') list = list.filter(p => advMoves(p).length);
+  if (fl === 'notes') list = list.filter(p => noteLine(p));
+  if (fl === 'remote') list = list.filter(p => p.remote);
+  if (fl === 'loc') list = list.filter(p => (p.location || '').trim());
   if (fl === 'pgmissing') list = list.filter(p => p.pgMissing);
   if (fl === 'form') list = list.filter(p => p.form && !/^normal$/i.test(p.form));
   if (fl === 'bg') list = list.filter(p => p.bg || p.bgKey);
@@ -605,7 +615,7 @@ function renderMons(){
     <div class="bar">
       <button class="b" id="pgImp">Poke Genie abgleichen</button>
       <input id="q" placeholder="Suchen, z. B. Evoli & Blitza & Flamara" title="Mehrere Suchbegriffe mit & , ; oder | trennen – angezeigt wird, was zu irgendeinem passt. Mit + verknüpfen, wenn alles zutreffen soll (z. B. Glurak + Luftschnitt). In Anführungszeichen = genauer Name (z. B. &quot;Mew&quot; ohne Mewtu)." value="${esc(F.q)}" style="flex:1;min-width:180px">
-      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['mega', 'Mit Mega-/Proto-Level'], ['pgmissing', 'Nicht mehr im Export'], ['form', 'Mit Form'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['mega', 'Mit Mega-/Proto-Level'], ['adv', 'Mit Abenteuereffekt'], ['notes', 'Mit Notiz'], ['remote', 'Fern-Raid'], ['loc', 'Mit Fangort'], ['pgmissing', 'Nicht mehr im Export'], ['form', 'Mit Form'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="sort">${[['new', 'Neueste'], ['dex', 'Pokédex-Nr.'], ['cp', 'WP'], ['iv', 'IV'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid">${list.slice(0, F.lim).map(monCard).join('')}</div>
@@ -635,6 +645,11 @@ const MEGA = new Set([3, 6, 9, 15, 18, 26, 36, 65, 71, 80, 94, 115, 121, 127, 13
 const MEGA_LV = ['', 'Basis', 'Hoch', 'Max', 'Super-Max'];
 const megaWord = dex => PRIMAL.has(dex) ? 'Proto' : 'Mega';
 const megaLabel = p => p.mega ? `${megaWord(p.dex)}: ${MEGA_LV[p.mega]}` : '';
+/* Abenteuereffekte hängen an diesen Lade-Attacken (nicht per TM erlernbar). Namen wie im Poke-Genie-Export.
+   Neue Abenteuereffekte hier ergänzen. */
+const ADV_MOVES = ['Zeitenlärm', 'Raumschlag', 'Frosthauch', 'Frostvolt', 'Stahlgestirn', 'Schattenstrahl', 'Gigantenhieb', 'Gigantenstoß'];
+const advMoves = p => [p.c1, p.c2].map(m => (m || '').trim()).filter(m => ADV_MOVES.some(a => a.toLowerCase() === m.toLowerCase()));
+const noteLine = p => (p.notes || '').trim().split(/\n/)[0];
 function monCard(p){
   const iv = ivPct(p);
   const b = [];
@@ -645,7 +660,9 @@ function monCard(p){
   if (p.lucky) b.push('<span class="bd lu">Glücks</span>');
   if (p.dyna) b.push(`<span class="bd dy">${p.dyna === 'giga' ? 'Gigadynamax' : 'Dynamax'}</span>`);
   if (p.mega) b.push(`<span class="bd mg">${megaLabel(p)}</span>`);
+  for (const m of advMoves(p)) b.push(`<span class="bd adv" title="Abenteuereffekt durch die Attacke ${esc(m)}">✦ ${esc(m)}</span>`);
   if (p.specialMove) b.push(`<span class="bd mv">⚡ Spezialattacke</span>`);
+  if (p.remote) b.push(`<span class="bd" title="${esc([p.location && 'Raid in ' + p.location, p.myLocation && 'von ' + p.myLocation].filter(Boolean).join(' · '))}">🛰 Fern-Raid${p.location ? ': ' + esc(p.location) : ''}</span>`);
   if (p.costume) b.push(`<span class="bd">🎩 ${esc(p.costume)}</span>`);
   if (p.bg) b.push(`<span class="bd bg">🖼 ${p.bg === 'special' ? 'Spezial' : 'Ort'}${p.bgName ? ': ' + esc(p.bgName) : ''}</span>`);
   if (p.size) b.push(`<span class="bd sz">${p.size}</span>`);
@@ -661,6 +678,7 @@ function monCard(p){
     <div class="ivrow"><span>WP <b class="ivp">${p.cp ?? '–'}</b></span><span>Lv ${p.level ?? '–'}</span><span>${iv == null ? 'IV –' : `<b class="ivp">${iv} %</b>`}</span></div>
     <div class="ivrow"><span>${p.ivA ?? '–'}/${p.ivD ?? '–'}/${p.ivH ?? '–'}</span>${ivStars(p)}</div>
     <div class="badges">${b.join('')}</div>
+    ${noteLine(p) ? `<div class="mnote" title="${esc(p.notes.trim())}">📝 ${esc(noteLine(p))}</div>` : ''}
   </div>`;
 }
 
@@ -721,9 +739,14 @@ function editMon(p){
       <label>Gefangen am<input name="caught" type="date" value="${p.caught || ''}"></label>
       <label>Höhe (m)<input name="height" type="number" step="0.01" min="0" value="${p.height ?? ''}"></label>
       <label>Gewicht (kg)<input name="weight" type="number" step="0.01" min="0" value="${p.weight ?? ''}"></label>
-      <label>Ort<input name="location" value="${esc(p.location)}"></label>
       <label>Tags<input name="tags" value="${esc(p.tags)}" placeholder="Raid, Tausch, Behalten…"></label>
     </div>
+    <div class="fg" style="margin-top:10px">
+      <label><span id="locLbl">${p.remote ? 'Raid-Ort' : 'Fangort'}</span><span class="row" style="gap:4px;flex-wrap:nowrap"><input name="location" list="dlPlaces" value="${esc(p.location)}" placeholder="z. B. Nürnberg" style="flex:1"><button type="button" class="b s" data-geo="location" title="Auf Karte finden">📍</button></span><span class="geost" data-geost="location" style="font-weight:400"></span></label>
+      <label class="chk"><input type="checkbox" name="remote" ${p.remote ? 'checked' : ''}> 🛰 Fern-Raid</label>
+      <label id="myLocWrap" ${p.remote ? '' : 'style="display:none"'}>Mein Standort<span class="row" style="gap:4px;flex-wrap:nowrap"><input name="myLocation" list="dlPlaces" value="${esc(p.myLocation)}" placeholder="wo du warst" style="flex:1"><button type="button" class="b s" data-geo="myLocation" title="Auf Karte finden">📍</button></span><span class="geost" data-geost="myLocation" style="font-weight:400"></span></label>
+    </div>
+    <div id="geoRes" class="picker" hidden></div>
     <label class="fl" style="margin-top:10px">Notizen<textarea name="notes">${esc(p.notes)}</textarea></label>
     ${p.pgMissing ? `<label class="chk" style="margin-top:10px;color:var(--bad)"><input type="checkbox" name="pgMissing" checked> ⚠ Seit ${fmtDate(p.pgMissing)} nicht mehr im Poke-Genie-Export – Haken entfernen, wenn es das Pokémon noch gibt, sonst unten löschen</label>` : ''}`,
     isNew ? '' : `<button class="b d" value="del" formnovalidate style="margin-right:auto">Löschen</button>`,
@@ -744,7 +767,7 @@ function editMon(p){
         mega: MEGA.has(num(fd.get('dex'))) && fd.get('align') !== 'shadow' ? num(fd.get('mega')) : null,
         viv: [664, 665, 666].includes(num(fd.get('dex'))) ? fd.get('viv') : '',
         shiny: !!fd.get('shiny'), specialMove: !!fd.get('specialMove'), lucky: !!fd.get('lucky'), fav: !!fd.get('fav'),
-        caught: fd.get('caught'), height: num(fd.get('height')), weight: num(fd.get('weight')), location: fd.get('location').trim(), tags: fd.get('tags').trim(), notes: fd.get('notes')
+        caught: fd.get('caught'), height: num(fd.get('height')), weight: num(fd.get('weight')), location: fd.get('location').trim(), remote: !!fd.get('remote'), myLocation: fd.get('remote') ? fd.get('myLocation').trim() : '', tags: fd.get('tags').trim(), notes: fd.get('notes')
       });
       if (p.pgMissing && !fd.get('pgMissing')) delete p.pgMissing;
       if (isNew) S.pokemon.push(p); save(); render();
@@ -787,6 +810,11 @@ function editMon(p){
   f.name.onchange = () => { const id = NAME2ID[f.name.value.trim().toLowerCase()]; if (id && DEX[id]?.de) f.name.value = DEX[id].de; };
   f.dex.oninput = () => { const n = nameOf(num(f.dex.value)); if (n && !f.name.value) f.name.value = n; upd(); };
   f.shiny.onchange = upd; upd();
+  // Orte: Status anzeigen, 📍 sucht den Ort einmal bei OpenStreetMap
+  const geoSt = () => dlgB.querySelectorAll('[data-geost]').forEach(s => s.textContent = placeState(f[s.dataset.geost].value));
+  geoSt(); f.location.addEventListener('input', geoSt); f.myLocation.addEventListener('input', geoSt);
+  f.remote.onchange = () => { document.getElementById('myLocWrap').style.display = f.remote.checked ? '' : 'none'; document.getElementById('locLbl').textContent = f.remote.checked ? 'Raid-Ort' : 'Fangort'; };
+  dlgB.querySelectorAll('[data-geo]').forEach(b => b.onclick = () => geoPick(f[b.dataset.geo].value, document.getElementById('geoRes'), geoSt));
 }
 
 /* ---------- Freunde ---------- */
@@ -1136,7 +1164,7 @@ function pgRow(r){
   };
 }
 // Angaben, die nur du einträgst (Poke Genie exportiert sie nicht)
-const hasOwnData = p => !!(p.shiny || p.specialMove || p.costume || p.bg || p.bgKey || p.size || p.dyna || p.mega || p.viv || p.nick || p.tags || (p.notes && p.notes.trim()) || p.fav);
+const hasOwnData = p => !!(p.shiny || p.specialMove || p.costume || p.bg || p.bgKey || p.size || p.dyna || p.mega || p.viv || p.location || p.remote || p.myLocation || p.nick || p.tags || (p.notes && p.notes.trim()) || p.fav);
 
 /* ===================== Poke-Genie-Abgleich (Prüfung vor dem Übernehmen) ===================== */
 // Ein Backup wird nie direkt übernommen. Das Tool stellt den aktuellen Stand dem Backup gegenüber,
@@ -1281,6 +1309,7 @@ function ownBadges(p){
   if (p.shiny) b.push('✨ Shiny'); if (p.costume) b.push('🎩 ' + esc(p.costume));
   if (p.bg || p.bgKey) b.push('🖼 ' + esc(p.bgName || (p.bgKey ? bgLabel(p.bgKey) : 'Hintergrund')));
   if (p.specialMove) b.push('⚡ Spezialattacke'); if (p.size) b.push(esc(p.size)); if (p.dyna) b.push(p.dyna === 'giga' ? 'Gigadynamax' : 'Dynamax'); if (p.mega) b.push(megaLabel(p));
+  if (p.location) b.push((p.remote ? '🛰 ' : '📍 ') + esc(p.location) + (p.myLocation ? ' (von ' + esc(p.myLocation) + ')' : ''));
   if (p.viv) b.push('Vivillon: ' + esc(VIVMAP[p.viv]?.[1] || p.viv)); if (p.fav) b.push('★'); if (p.tags) b.push('# ' + esc(p.tags)); if (p.notes && p.notes.trim()) b.push('📝');
   if (p.pgMissing) b.push('⚠ markiert seit ' + fmtDate(p.pgMissing));
   return b.length ? `<div class="badges" style="justify-content:flex-start">${b.map(x => `<span class="bd">${x}</span>`).join('')}</div>` : '';
@@ -1542,6 +1571,117 @@ function openFriendImport(){
     });
 }
 
+/* ===================== Orte & Karte ===================== */
+// Der Text im Feld „Ort“ bleibt die Grundlage. Koordinaten stehen einmal pro Ort im Verzeichnis S.places
+// (Schlüssel = Ortsname klein geschrieben), damit nicht jedes Pokémon dieselbe Koordinate trägt.
+// Ortssuche über OpenStreetMap/Nominatim – nur auf Knopfdruck, es wird nur der Ortsname gesendet.
+const placeKey = t => String(t || '').trim().toLowerCase();
+const placeOf = t => (S.places || {})[placeKey(t)] || null;
+async function geoSearch(q){
+  const u = 'https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=de&q=' + encodeURIComponent(q);
+  const r = await fetch(u, { headers: { 'Accept': 'application/json' } });
+  if (!r.ok) throw new Error('Ortssuche nicht erreichbar (' + r.status + ')');
+  return (await r.json()).map(x => ({ lat: +x.lat, lng: +x.lon, label: x.display_name }));
+}
+// Ergebnisliste unter einem Ort-Feld; Auswahl speichert die Koordinate zum eingegebenen Text
+async function geoPick(text, box, done){
+  text = String(text || '').trim();
+  if (!text){ box.hidden = false; box.innerHTML = '<p class="note" style="margin:4px">Erst einen Ort eintragen, z. B. „Nürnberg“ oder „Shibuya, Tokio“.</p>'; return; }
+  box.hidden = false; box.innerHTML = `<p class="note" style="margin:4px">Suche „${esc(text)}“ …</p>`;
+  try{
+    const res = await geoSearch(text);
+    box.innerHTML = res.length
+      ? `<p class="note" style="margin:4px">Welcher Ort ist „${esc(text)}“?</p>${res.map((x, i) => `<button type="button" class="b s" style="display:block;width:100%;text-align:left;margin:3px 0" data-gi="${i}">📍 ${esc(x.label)}</button>`).join('')}<button type="button" class="b s" data-gi="x">Keiner davon</button>`
+      : `<p class="note" style="margin:4px">Nichts gefunden. Versuch es mit Stadt und Land, z. B. „${esc(text)}, Deutschland“.</p>`;
+    box.querySelectorAll('[data-gi]').forEach(b => b.onclick = async () => {
+      box.hidden = true;
+      if (b.dataset.gi === 'x') return;
+      const x = res[+b.dataset.gi];
+      (S.places ||= {})[placeKey(text)] = { name: text, lat: Math.round(x.lat * 1e5) / 1e5, lng: Math.round(x.lng * 1e5) / 1e5, label: x.label };
+      await save(); done && done();
+    });
+  }catch(e){ box.innerHTML = `<p class="note" style="margin:4px;color:var(--bad)">${esc(e.message)}</p>`; }
+}
+const placeState = t => !String(t || '').trim() ? '' : placeOf(t) ? '✓ auf der Karte' : 'noch ohne Koordinaten – 📍 tippen';
+
+/* ---------- Karte ---------- */
+let LEAF = null;
+function loadLeaflet(){
+  if (window.L) return Promise.resolve();
+  if (LEAF) return LEAF;
+  LEAF = new Promise((res, rej) => {
+    const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css'; document.head.appendChild(css);
+    const js = document.createElement('script'); js.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    js.onload = res; js.onerror = () => { LEAF = null; rej(new Error('Kartenbibliothek konnte nicht geladen werden')); }; document.head.appendChild(js);
+  });
+  return LEAF;
+}
+const MAPUI = { catch: true, remote: true };
+let MAP = null;
+function mapData(){
+  const caught = new Map(), raids = [], missing = new Map();
+  const miss = t => { const k = placeKey(t); if (k && !placeOf(t)) missing.set(k, { name: String(t).trim(), n: (missing.get(k)?.n || 0) + 1 }); };
+  for (const p of S.pokemon){
+    if (!(p.location || '').trim()) continue;
+    const pl = placeOf(p.location);
+    if (p.remote){
+      miss(p.location); if (p.myLocation) miss(p.myLocation);
+      if (pl) raids.push({ p, to: pl, from: p.myLocation ? placeOf(p.myLocation) : null });
+    } else {
+      miss(p.location);
+      if (pl){ const k = placeKey(p.location); if (!caught.has(k)) caught.set(k, { pl, list: [] }); caught.get(k).list.push(p); }
+    }
+  }
+  return { caught: [...caught.values()], raids, missing: [...missing.values()].sort((a, b) => b.n - a.n) };
+}
+const monLine = p => `${esc(p.nick || p.name)}${p.form ? ' (' + esc(p.form) + ')' : ''} · WP ${p.cp ?? '–'}${p.shiny ? ' ✨' : ''}`;
+function renderMap(){
+  const D = mapData();
+  const withLoc = S.pokemon.filter(p => (p.location || '').trim()).length;
+  main.innerHTML = `
+    <div class="stat">
+      <div class="card"><b>${D.caught.reduce((s, c) => s + c.list.length, 0)}</b><span class="muted">Fänge auf der Karte</span></div>
+      <div class="card"><b>${D.raids.length}</b><span class="muted">Fern-Raids auf der Karte</span></div>
+      <div class="card"><b>${D.caught.length}</b><span class="muted">Fangorte</span></div>
+      <div class="card"><b>${withLoc}</b><span class="muted">Pokémon mit Ort</span></div>
+    </div>
+    <div class="bar">
+      <label class="chk"><input type="checkbox" id="mCatch" ${MAPUI.catch ? 'checked' : ''}> <span class="dot" style="background:#2f6fed"></span>Fangorte</label>
+      <label class="chk"><input type="checkbox" id="mRemote" ${MAPUI.remote ? 'checked' : ''}> <span class="dot" style="background:#e5533d"></span>Fern-Raids (Linie von deinem Standort zum Raid)</label>
+    </div>
+    <div id="map" style="height:min(70vh,620px);border-radius:12px;border:1px solid var(--line);background:var(--card)"><p class="empty">Karte wird geladen …</p></div>
+    <p class="note">Kartendaten © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>-Mitwirkende. Orte trägst du beim Pokémon unter „Herkunft“ ein.</p>
+    ${D.missing.length ? `<div class="card" style="margin-top:12px"><h3 style="margin:0 0 6px">Orte ohne Koordinaten (${D.missing.length})</h3>
+      <p class="note" style="margin-top:0">Diese Orte stehen bei deinen Pokémon, sind aber noch nicht auf der Karte. 📍 sucht den Ort einmal; danach erscheinen alle Pokémon mit diesem Ort.</p>
+      ${D.missing.slice(0, 50).map((m, i) => `<div class="row" style="margin:4px 0"><span class="sp">${esc(m.name)} <span class="muted">(${m.n})</span></span><button class="b s" data-mg="${i}">📍 finden</button></div><div class="picker" id="mg${i}" hidden></div>`).join('')}
+    </div>` : ''}`;
+  mCatch.onchange = e => { MAPUI.catch = e.target.checked; drawMap(D); };
+  mRemote.onchange = e => { MAPUI.remote = e.target.checked; drawMap(D); };
+  main.querySelectorAll('[data-mg]').forEach(b => b.onclick = () => geoPick(D.missing[+b.dataset.mg].name, document.getElementById('mg' + b.dataset.mg), renderMap));
+  loadLeaflet().then(() => drawMap(D)).catch(e => { document.getElementById('map').innerHTML = `<p class="empty">${esc(e.message)}</p>`; });
+}
+function drawMap(D){
+  const el = document.getElementById('map'); if (!el || !window.L) return;
+  if (MAP){ try{ MAP.remove(); }catch(e){} MAP = null; }
+  el.innerHTML = '';
+  MAP = L.map(el, { worldCopyJump: true }).setView([30, 10], 2);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18, attribution: '© OpenStreetMap' }).addTo(MAP);
+  const pts = [];
+  if (MAPUI.catch) for (const c of D.caught){
+    const r = Math.min(18, 5 + Math.sqrt(c.list.length) * 2.5);
+    L.circleMarker([c.pl.lat, c.pl.lng], { radius: r, color: '#1d4ed8', fillColor: '#2f6fed', fillOpacity: .55, weight: 2 })
+      .bindPopup(`<b>${esc(c.pl.name)}</b> – ${c.list.length} Pokémon<br><span style="font-size:12px">${c.list.slice(0, 25).map(monLine).join('<br>')}${c.list.length > 25 ? '<br>…' : ''}</span>`).addTo(MAP);
+    pts.push([c.pl.lat, c.pl.lng]);
+  }
+  if (MAPUI.remote) for (const r of D.raids){
+    if (r.from) L.polyline([[r.from.lat, r.from.lng], [r.to.lat, r.to.lng]], { color: '#e5533d', weight: 2, opacity: .7, dashArray: '6 6' }).addTo(MAP);
+    L.circleMarker([r.to.lat, r.to.lng], { radius: 7, color: '#b3261e', fillColor: '#e5533d', fillOpacity: .8, weight: 2 })
+      .bindPopup(`<b>🛰 Fern-Raid: ${monLine(r.p)}</b><br>Raid in ${esc(r.to.name)}${r.from ? `<br>von ${esc(r.from.name)} aus` : ''}${r.p.caught ? `<br>${fmtDate(r.p.caught)}` : ''}`).addTo(MAP);
+    pts.push([r.to.lat, r.to.lng]); if (r.from) pts.push([r.from.lat, r.from.lng]);
+  }
+  if (pts.length) MAP.fitBounds(pts, { padding: [30, 30], maxZoom: 10 });
+}
+
 /* ===================== Dialog-Helfer ===================== */
 let dlgCb = null;
 function openDlg(title, body, extraBtns, cb){
@@ -1570,7 +1710,7 @@ function initSync(){
   if (!window.ToolSync || STORE_MODE !== 'idb') return;
   SYNC = ToolSync.create({
     tool: 'pokemon-go',
-    collections: { pokemon: 'array', friends: 'array', postcards: 'array', regionHints: 'map' },
+    collections: { pokemon: 'array', friends: 'array', postcards: 'array', regionHints: 'map', places: 'map' },
     shards: 16,   // Ordner pokemon-go/ (main.json + s00–s15.json); nur geänderte Teile werden hochgeladen. Zahl NIE ändern.
     fields: ['xpDigits'],
     get: () => S,

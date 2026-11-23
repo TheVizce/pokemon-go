@@ -2,10 +2,12 @@
 
 ## Dieses Tool
 - IndexedDB `pokemon-go-tool`, localStorage-Präfix `go-organizer`.
-- Sync: Ordner `pokemon-go/` mit `shards: 16` (main.json + s00–s15.json, seit 11.11.2026; die Zahl nie ändern). Die alte `pokemon-go.json` im Daten-Repo wird nicht mehr benutzt. `collections: pokemon, friends, postcards (array), regionHints (map)`, Feld `xpDigits`.
+- Sync: Ordner `pokemon-go/` mit `shards: 16` (main.json + s00–s15.json, seit 11.11.2026; die Zahl nie ändern). Die alte `pokemon-go.json` im Daten-Repo wird nicht mehr benutzt. `collections: pokemon, friends, postcards (array), regionHints, places (map)`, Feld `xpDigits`.
 - Ohne IndexedDB nur Ansicht + JSON-Export (kein Ausweichen in den gemeinsamen localStorage).
 - Freunde: Resttage nur über „Prüfen“; Prüfintervall gestaffelt nach Status (`CHECK_AFTER`). 
 - Poke Genie nur über den **Abgleich**: Backup wird dem Stand gegenübergestellt, jede Änderung einzeln entschieden (nichts vorausgewählt, nichts automatisch zusammengeführt), erst „Ausgewählte übernehmen“ schreibt. Prüf-Stand im IndexedDB-Eintrag `pgReview` (Store `kv`, nicht synchronisiert, wird nach Abschluss gelöscht). Wiedererkennung über `pgKey` (Scan-Datum + IVs + Geschlecht), Gegenstücke über Entwicklungsreihe (`EVO`). `pgForm` = zuletzt aus Poke Genie übernommene Form. Alte `pgMissing`-Markierungen landen in „Nicht mehr im Backup“.
+- Orte: `location` = Fangort (bei `remote` = Raid-Ort), `myLocation` = eigener Standort beim Fern-Raid. Koordinaten einmal pro Ort im Verzeichnis `places` (Map, Schlüssel = Ortsname klein, synchronisiert). Ortssuche nur auf Knopfdruck über OpenStreetMap/Nominatim; Karte-Tab mit Leaflet 1.9.4 (cdnjs) und OSM-Kacheln.
+- Abenteuereffekt wird aus den Lade-Attacken abgeleitet (`ADV_MOVES`, Namen wie im Poke-Genie-Export) – kein eigenes Feld; neue Abenteuereffekte dort ergänzen.
 - `SYNC.changed()` steckt in `save()`. `apply` übernimmt in `S` und ruft `save()`.
 - Bilder werden nur verlinkt, nicht ins Repo kopiert: PokéAPI-HOME-Sprites (Formen, Gigadynamax) und PokeMiners/pogo_assets (Hintergründe `Images/LocationCards`). Listen `FORMDATA`, `BGS` sind in `index.html` eingebettet; bei neuen Events neu erzeugen.
 - Kostüme sind reiner Text (`costume`). Kostüm-Bilder wurden am 23.11.2026 auf Wunsch zurückgebaut (uneinheitlich: nicht alle vorhanden, anderer Stil/andere Größe) – nicht wieder einführen. Alte `costumeKey` werden beim Start in Text umgewandelt.
