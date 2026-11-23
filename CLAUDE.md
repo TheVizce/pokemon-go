@@ -7,8 +7,9 @@
 - Freunde: Resttage nur über „Prüfen“; Prüfintervall gestaffelt nach Status (`CHECK_AFTER`). 
 - Poke Genie nur über den **Abgleich**: Backup wird dem Stand gegenübergestellt, jede Änderung einzeln entschieden (nichts vorausgewählt, nichts automatisch zusammengeführt), erst „Ausgewählte übernehmen“ schreibt. Prüf-Stand im IndexedDB-Eintrag `pgReview` (Store `kv`, nicht synchronisiert, wird nach Abschluss gelöscht). Wiedererkennung über `pgKey` (Scan-Datum + IVs + Geschlecht), Gegenstücke über Entwicklungsreihe (`EVO`). `pgForm` = zuletzt aus Poke Genie übernommene Form. Alte `pgMissing`-Markierungen landen in „Nicht mehr im Backup“.
 - `SYNC.changed()` steckt in `save()`. `apply` übernimmt in `S` und ruft `save()`.
-- Bilder werden nur verlinkt, nicht ins Repo kopiert: PokéAPI-HOME-Sprites (Formen, Gigadynamax) und PokeMiners/pogo_assets (Kostüme `Images/Pokemon - 256x256`, Hintergründe `Images/LocationCards`). Listen `FORMDATA`, `COSTUMES`, `BGS` sind in `index.html` eingebettet; bei neuen Events neu erzeugen.
-- Pokémon-Felder für Bilder: `costumeKey` (z. B. `cJAN_2020_NOEVOLVE`), `bgKey` (z. B. `sb_GoFest2025`). Freitext `costume`/`bgName` bleibt als Fallback.
+- Bilder werden nur verlinkt, nicht ins Repo kopiert: PokéAPI-HOME-Sprites (Formen, Gigadynamax) und PokeMiners/pogo_assets (Hintergründe `Images/LocationCards`). Listen `FORMDATA`, `BGS` sind in `index.html` eingebettet; bei neuen Events neu erzeugen.
+- Kostüme sind reiner Text (`costume`). Kostüm-Bilder wurden am 23.11.2026 auf Wunsch zurückgebaut (uneinheitlich: nicht alle vorhanden, anderer Stil/andere Größe) – nicht wieder einführen. Alte `costumeKey` werden beim Start in Text umgewandelt.
+- Hintergrund: Bild `bgKey` (z. B. `sb_GoFest2025`), Freitext `bgName` bleibt als Fallback.
 
 ## Gemeinsame Regeln für alle Tools unter thevizce.github.io
 
