@@ -517,7 +517,11 @@ const CHECK_AFTER = { no: 7, lo: 14, ok: 30, uk: 14, na: 30, frStall: 14, frOk: 
 // Ab so vielen Tagen ohne Fortschritt gilt die Freundschaft als stockend
 const FR_STALL = 7;
 const addDays = (d, n) => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
-const withDue = (a, c, n) => { a.nextCheck = addDays(c, n ?? CHECK_AFTER[a.key || a.cls]); a.due = a.nextCheck <= today(); return a; };
+// Prüfintervall pro Freund um bis zu ±25 % gestreut (fest pro Freund, aus der id), damit nicht alle am selben Tag fällig werden.
+const CHECK_SPREAD = 0.25;
+const idFrac = id => { let h = 2166136261; for (const ch of String(id)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619); return (h >>> 0) / 4294967296; };
+const spreadDays = (n, id) => id == null ? n : Math.max(1, Math.round(n * (1 + CHECK_SPREAD * (2 * idFrac(id) - 1))));
+const withDue = (a, c, n, id) => { a.nextCheck = addDays(c, spreadDays(n ?? CHECK_AFTER[a.key || a.cls], id)); a.due = a.nextCheck <= today(); return a; };
 // EP werden nur mit den letzten 4 Ziffern notiert und verglichen (volle Zahlen werden gekürzt)
 const XP_DIGITS = 4, XP_MOD = 10 ** XP_DIGITS;
 const xpS = v => (v == null || v === '' || isNaN(+v)) ? null : Math.abs(Math.round(+v)) % XP_MOD;
@@ -611,7 +615,7 @@ function activity(f){
     fr = st == null ? { cls: 'uk', txt: 'Unklar', stale: null }
       : st < FR_STALL ? { cls: 'ok', txt: 'Wächst', stale: st } : { cls: st < 21 ? 'lo' : 'no', txt: 'Stockt', stale: st };
   }
-  if (!play && !fr) return withDue({ cls: 'uk', key: 'na', txt: 'Nicht bewertbar', detail: 'Lv 80 und Allerbester Freund – über EP und Freundschaft nicht messbar', checkAge, stale: null, play, fr, ignores: false }, c);
+  if (!play && !fr) return withDue({ cls: 'uk', key: 'na', txt: 'Nicht bewertbar', detail: 'Lv 80 und Allerbester Freund – über EP und Freundschaft nicht messbar', checkAge, stale: null, play, fr, ignores: false }, c, undefined, f.id);
   // Hauptstatus (Filter „Inaktiv?“ usw.) = Spielt; bei Lv 80 ersatzweise die Freundschaft wie bisher
   const main = play || { cls: fr.cls === 'ok' ? 'ok' : fr.cls, txt: fr.cls === 'ok' ? 'Aktiv' : fr.cls === 'uk' ? 'Unklar' : fr.cls === 'lo' ? 'Ruhig' : 'Inaktiv?' };
   const ignores = !!(play && play.cls === 'ok' && fr && (fr.cls === 'lo' || fr.cls === 'no'));
@@ -620,7 +624,7 @@ function activity(f){
   const tage = n => n === 0 ? 'Änderung am Prüftag' : `${n} T ohne Änderung`;
   const detail = [play && play.stale != null ? 'EP: ' + tage(play.stale) : '', fr && fr.stale != null ? 'Freundschaft: ' + tage(fr.stale) : ''].filter(Boolean).join(' · ');
   const n = Math.min(play ? CHECK_AFTER[play.cls] : 1e9, fr ? (fr.cls === 'ok' ? CHECK_AFTER.frOk : fr.cls === 'uk' ? CHECK_AFTER.uk : CHECK_AFTER.frStall) : 1e9);
-  return withDue({ cls: main.cls, txt: main.txt, detail, checkAge, stale, play, fr, ignores }, c, n);
+  return withDue({ cls: main.cls, txt: main.txt, detail, checkAge, stale, play, fr, ignores }, c, n, f.id);
 }
 // Alte Freunde (Version mit f.days) auf Resttage umstellen
 function migrateFriends(){
