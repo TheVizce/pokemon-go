@@ -270,7 +270,7 @@ async function initStore(){
   }
   try{ for (const k of ['go-organizer-dex', 'go-organizer-dex-v2']) localStorage.removeItem(k); }catch(e){}
   if (S.pokemon.some(p => 'pvp' in p)){ S.pokemon.forEach(p => delete p.pvp); save(); }
-  if (migrateFriends() | migrateXpDigits() | migrateCostumeKeys() | migratePostcards()) save();
+  if (migrateFriends() | migrateXpDigits() | migrateCostumeKeys() | migratePostcards() | migrateVivCards()) save();
   try{ REV = (await idbGet(REV_KEY)) || null; if (REV) REV.done ||= {}, REV.dec ||= {}; }catch(e){ REV = null; }
   try{ if (navigator.storage?.persist) PERSISTED = (await navigator.storage.persisted()) || (await navigator.storage.persist()); }catch(e){}
 }
@@ -1025,6 +1025,18 @@ function migratePostcards(){
   }
   return ch;
 }
+// Vivillon-Kartenzahl wie in der Medaille: Fortschritt bis zur nächsten Purmel-Begegnung (z. B. 4 / 15).
+// Ziel 3 (erste), 9 (zweite), danach 15. Frühere Einträge mit Gesamtzahl { n } werden umgerechnet.
+const VIV_GOALS = [3, 9, 15];
+function migrateVivCards(){
+  let ch = false;
+  for (const [k, v] of Object.entries(S.vivCards || {})){
+    if (!v || v.n == null || v.goal != null) continue;
+    const [enc, nxt] = vivEncounters(v.n), prev = enc === 0 ? 0 : enc === 1 ? 3 : 12 + 15 * (enc - 2);
+    S.vivCards[k] = { p: v.n - prev, goal: nxt - prev, date: v.date }; ch = true;
+  }
+  return ch;
+}
 const vivOptions = sel => `<option value="">unbekannt</option>${VIV.slice(0, 18).map(v => `<option value="${v[0]}" ${sel === v[0] ? 'selected' : ''}>${v[1]}muster (${v[2]})</option>`).join('')}`;
 
 /* ---------- Vivillon ---------- */
@@ -1034,35 +1046,37 @@ function renderViv(){
   const wip = k => S.pokemon.some(p => (p.dex === 664 || p.dex === 665) && p.viv === k);
   const nOwned = pats.filter(v => owned(v[0])).length;
   const VC = S.vivCards || (S.vivCards = {});
-  const cnt = k => VC[k]?.n ?? null;
-  const total = pats.reduce((a, v) => a + (cnt(v[0]) || 0), 0);
+  const started = k => VC[k] && (VC[k].p > 0 || VC[k].goal > 3);
+  const soon = k => VC[k] && VC[k].p != null && VC[k].goal - VC[k].p <= 1;
   main.innerHTML = `
     <div class="stat">
       <div class="card"><b>${nOwned} / 18</b><span class="muted">Muster als Vivillon</span></div>
-      <div class="card"><b>${pats.filter(v => cnt(v[0]) > 0).length} / 18</b><span class="muted">Muster mit Postkarten</span></div>
-      <div class="card"><b>${total}</b><span class="muted">Postkarten laut Spiel</span></div>
+      <div class="card"><b>${pats.filter(v => started(v[0])).length} / 18</b><span class="muted">Muster mit Postkarten</span></div>
+      <div class="card"><b>${pats.filter(v => soon(v[0])).length}</b><span class="muted">nur noch 1 Karte bis Purmel</span></div>
     </div>
-    <p class="note">Trag pro Muster die Zahl der Postkarten ein, die das Spiel bei Vivillon anzeigt. Purmel-Begegnung nach 3 Karten einer Region, die nächste nach 9 weiteren, danach alle 15. Besitz wird aus deinen Pokémon (Purmel/Puponcho/Vivillon mit Muster) erkannt, die Freunde aus dem Muster beim Freund.</p>
+    <p class="note">Trag pro Muster den Stand aus der Vivillon-Medaille ein, z. B. 4 / 15. Die erste Purmel-Begegnung gibt es nach 3 Karten, die zweite nach 9 weiteren, danach alle 15. Besitz wird aus deinen Pokémon (Purmel/Puponcho/Vivillon mit Muster) erkannt, die Freunde aus dem Muster beim Freund.</p>
     <div class="viv">${pats.map(v => {
-      const n = cnt(v[0]) || 0;
-      const [enc, nxt] = vivEncounters(n);
-      const prev = enc === 0 ? 0 : enc === 1 ? 3 : 12 + 15 * (enc - 2);
-      const pct = Math.min(100, (n - prev) / (nxt - prev) * 100);
+      const c = VC[v[0]] || {}, goal = c.goal || 3, pr = c.p ?? null;
+      const pct = pr == null ? 0 : Math.min(100, pr / goal * 100);
       const friends = S.friends.filter(f => f.viv === v[0]).map(f => f.name).sort((a, b) => a.localeCompare(b, 'de'));
       return `<div class="card ${owned(v[0]) ? 'own' : ''}">
         <div class="row"><b class="sp">${vivDot(v[0])}${v[1]}</b>${owned(v[0]) ? '✅' : wip(v[0]) ? '🐛' : ''}</div>
         <div class="note">${v[2]}</div>
-        <label class="note" style="display:flex;align-items:center;gap:6px;margin:6px 0">Karten laut Spiel <input type="number" min="0" max="9999" inputmode="numeric" data-vc="${v[0]}" value="${cnt(v[0]) ?? ''}" style="width:80px"></label>
+        <div class="row" style="gap:4px;margin:6px 0;flex-wrap:nowrap"><input type="number" min="0" max="15" inputmode="numeric" data-vp="${v[0]}" value="${pr ?? ''}" placeholder="–" style="width:56px" aria-label="Karten"> <b>/</b> <select data-vg="${v[0]}" aria-label="Ziel">${VIV_GOALS.map(g => `<option value="${g}" ${g === goal ? 'selected' : ''}>${g}</option>`).join('')}</select></div>
         <div class="prog"><i style="width:${pct}%;background:${v[3]}"></i></div>
-        <div class="note">${enc} Begegnung${enc === 1 ? '' : 'en'} · nächste bei ${nxt}${VC[v[0]]?.date ? `<br>Stand ${fmtDate(VC[v[0]].date)}` : ''}</div>
+        <div class="note">${pr == null ? 'noch nicht eingetragen' : pr >= goal ? 'Purmel-Begegnung fällig' : `noch ${goal - pr} bis Purmel`}${c.date ? `<br>Stand ${fmtDate(c.date)}` : ''}</div>
         ${friends.length ? `<div class="note" style="margin-top:4px">Freunde: ${friends.map(esc).join(', ')}</div>` : ''}
       </div>`;
     }).join('')}</div>`;
-  main.querySelectorAll('[data-vc]').forEach(i => i.onchange = () => {
-    const k = i.dataset.vc, n = num(i.value);
-    if (n == null) delete VC[k]; else if (VC[k]?.n !== n) VC[k] = { n: Math.max(0, Math.round(n)), date: today() };
+  const upd = k => {
+    const p = num(main.querySelector(`[data-vp="${k}"]`).value), goal = +main.querySelector(`[data-vg="${k}"]`).value;
+    const old = VC[k] || {};
+    if (p == null && goal === 3){ if (!VC[k]) return; delete VC[k]; }
+    else { const n = { p: p == null ? null : Math.max(0, Math.round(p)), goal, date: today() }; if (old.p === n.p && old.goal === n.goal) return; VC[k] = n; }
     save(); renderViv();
-  });
+  };
+  main.querySelectorAll('[data-vp]').forEach(i => i.onchange = () => upd(i.dataset.vp));
+  main.querySelectorAll('[data-vg]').forEach(i => i.onchange = () => upd(i.dataset.vg));
 }
 
 /* ---------- Daten ---------- */
