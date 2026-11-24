@@ -1026,7 +1026,8 @@ function giftScore(f){
   add(Math.min(d ?? 30, 30), d == null ? 'noch nie geöffnet' : d === 0 ? 'heute schon geöffnet' : `zuletzt vor ${d} T geöffnet`);
   if (f.irl) add(10, 'Reallife-Freund');
   if (f.viv && VIVMAP[f.viv] && !S.pokemon.some(p => p.dex === 666 && p.viv === f.viv)) add(5, `Postkarte mit ${VIVMAP[f.viv][1]} (fehlt dir)`);
-  const rs = removeScore(f); if ((rs.score ?? -1e9) >= REMOVE_MIN) add(-25, 'Kandidat zum Entfernen');
+  // Kandidaten zum Entfernen ganz nach oben: das Geschenk vor dem Entfernen noch öffnen, sonst ist es weg
+  const rs = removeScore(f); if ((rs.score ?? -1e9) >= REMOVE_MIN) add(1000, 'Kandidat zum Entfernen – vorher öffnen');
   return { score: sc, why };
 }
 function giftMark(f, on){
