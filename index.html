@@ -446,10 +446,13 @@ const FT = [0, 1, 7, 30, 90, 180];
 const MAXLVL = FL.length - 1;
 const spanOf = lvl => lvl >= MAXLVL ? null : FT[lvl + 1] - FT[lvl];
 const unitOf = (lvl, n) => lvl === 4 ? (n === 1 ? 'Punkt' : 'Punkte') : (n === 1 ? 'Tag' : 'Tage');
-// Tage bis zur nächsten Prüfung, gestaffelt nach Status: Inaktiv? 7 · Ruhig 14 · Aktiv 30 · Unklar 14 · Nicht bewertbar 30
-const CHECK_AFTER = { no: 7, lo: 14, ok: 30, uk: 14, na: 30 };
+// Tage bis zur nächsten Prüfung, gestaffelt nach Status. Es zählt der kürzere Wert aus „Spielt“ und „Freundschaft“.
+// Spielt: Inaktiv? 7 · Ruhig 14 · Aktiv 30 · Freundschaft: stockt 14 · wächst 30 · Unklar 14 · Nicht bewertbar 30
+const CHECK_AFTER = { no: 7, lo: 14, ok: 30, uk: 14, na: 30, frStall: 14, frOk: 30 };
+// Ab so vielen Tagen ohne Fortschritt gilt die Freundschaft als stockend
+const FR_STALL = 7;
 const addDays = (d, n) => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + n); return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); };
-const withDue = (a, c) => { a.nextCheck = addDays(c, CHECK_AFTER[a.key || a.cls]); a.due = a.nextCheck <= today(); return a; };
+const withDue = (a, c, n) => { a.nextCheck = addDays(c, n ?? CHECK_AFTER[a.key || a.cls]); a.due = a.nextCheck <= today(); return a; };
 // EP werden nur mit den letzten 4 Ziffern notiert und verglichen (volle Zahlen werden gekürzt)
 const XP_DIGITS = 4, XP_MOD = 10 ** XP_DIGITS;
 const xpS = v => (v == null || v === '' || isNaN(+v)) ? null : Math.abs(Math.round(+v)) % XP_MOD;
@@ -499,22 +502,35 @@ function friendProgress(f){
 // Prüfstatus: wie lange hatte sich zum Zeitpunkt der letzten Prüfung nichts mehr geändert?
 function activity(f){
   const c = f.lastCheck;
-  if (!c) return { cls: 'uk', txt: 'Nie geprüft', detail: '', due: true, nextCheck: '', checkAge: null, stale: null };
+  if (!c) return { cls: 'uk', txt: 'Nie geprüft', detail: '', due: true, nextCheck: '', checkAge: null, stale: null, play: null, fr: null, ignores: false };
   const checkAge = daysBetween(c, today());
   const lv80 = (f.trainerLvl || 0) >= 80;
-  // Lv 80: EP ändern sich nicht mehr; Allerbester Freund: kein weiteres Level. Beides zusammen = nicht messbar.
-  if (lv80 && (f.level || 0) >= MAXLVL) return withDue({ cls: 'uk', key: 'na', txt: 'Nicht bewertbar', detail: 'Lv 80 und Allerbester Freund – über EP und Freundschaft nicht messbar', checkAge, stale: null }, c);
-  // Bei Lv 80 zählt nur die Freundschaft
+  const maxFr = (f.level || 0) >= MAXLVL;
+  const ageTo = d => d ? Math.max(0, daysBetween(d, c)) : null;
+  // Spielt: aus den EP. Bei Lv 80 ändern sich die EP nicht mehr → nicht messbar.
+  let play = null;
+  if (!lv80){
+    const st = ageTo(f.xpChanged);
+    play = st == null ? { cls: 'uk', txt: 'Unklar', stale: null }
+      : st < 7 ? { cls: 'ok', txt: 'Aktiv', stale: st } : st < 21 ? { cls: 'lo', txt: 'Ruhig', stale: st } : { cls: 'no', txt: 'Inaktiv?', stale: st };
+  }
+  // Freundschaft: aus Freundeslevel und Resttagen. Beim Allerbesten Freund gibt es kein weiteres Level → nicht messbar.
+  let fr = null;
+  if (!maxFr){
+    const st = ageTo(f.friendChanged);
+    fr = st == null ? { cls: 'uk', txt: 'Unklar', stale: null }
+      : st < FR_STALL ? { cls: 'ok', txt: 'Wächst', stale: st } : { cls: st < 21 ? 'lo' : 'no', txt: 'Stockt', stale: st };
+  }
+  if (!play && !fr) return withDue({ cls: 'uk', key: 'na', txt: 'Nicht bewertbar', detail: 'Lv 80 und Allerbester Freund – über EP und Freundschaft nicht messbar', checkAge, stale: null, play, fr, ignores: false }, c);
+  // Hauptstatus (Filter „Inaktiv?“ usw.) = Spielt; bei Lv 80 ersatzweise die Freundschaft wie bisher
+  const main = play || { cls: fr.cls === 'ok' ? 'ok' : fr.cls, txt: fr.cls === 'ok' ? 'Aktiv' : fr.cls === 'uk' ? 'Unklar' : fr.cls === 'lo' ? 'Ruhig' : 'Inaktiv?' };
+  const ignores = !!(play && play.cls === 'ok' && fr && (fr.cls === 'lo' || fr.cls === 'no'));
   const lastChange = (lv80 ? [f.friendChanged] : [f.xpChanged, f.friendChanged]).filter(Boolean).sort().pop();
   const stale = lastChange ? Math.max(0, daysBetween(lastChange, c)) : null;
-  let cls = 'uk', txt = 'Unklar';
-  if (stale != null){
-    if (stale < 7){ cls = 'ok'; txt = 'Aktiv'; }
-    else if (stale < 21){ cls = 'lo'; txt = 'Ruhig'; }
-    else { cls = 'no'; txt = 'Inaktiv?'; }
-  }
-  const detail = stale == null ? '' : stale === 0 ? 'Änderung am Prüftag' : `${stale} T ohne Änderung bis zur Prüfung`;
-  return withDue({ cls, txt, detail, checkAge, stale }, c);
+  const tage = n => n === 0 ? 'Änderung am Prüftag' : `${n} T ohne Änderung`;
+  const detail = [play && play.stale != null ? 'EP: ' + tage(play.stale) : '', fr && fr.stale != null ? 'Freundschaft: ' + tage(fr.stale) : ''].filter(Boolean).join(' · ');
+  const n = Math.min(play ? CHECK_AFTER[play.cls] : 1e9, fr ? (fr.cls === 'ok' ? CHECK_AFTER.frOk : fr.cls === 'uk' ? CHECK_AFTER.uk : CHECK_AFTER.frStall) : 1e9);
+  return withDue({ cls: main.cls, txt: main.txt, detail, checkAge, stale, play, fr, ignores }, c, n);
 }
 // Alte Freunde (Version mit f.days) auf Resttage umstellen
 function migrateFriends(){
@@ -833,6 +849,8 @@ function renderFriends(){
   if (fl === 'due') list = list.filter(f => activity(f).due);
   if (fl === 'inactive') list = list.filter(f => activity(f).cls === 'no');
   if (fl === 'quiet') list = list.filter(f => ['no', 'lo'].includes(activity(f).cls));
+  if (fl === 'ignores') list = list.filter(f => activity(f).ignores);
+  if (fl === 'frstall') list = list.filter(f => { const r = activity(f).fr; return r && (r.cls === 'lo' || r.cls === 'no'); });
   if (fl === 'lucky') list = list.filter(f => f.lucky);
   if (/^L\d$/.test(fl)) list = list.filter(f => (f.level || 0) === +fl[1]);
   const A = new Map(list.map(f => [f.id, activity(f)]));
@@ -853,11 +871,12 @@ function renderFriends(){
       ${FL.map((l, i) => `<div class="card"><b>${cnt(f => (f.level || 0) === i)}</b><span class="muted">${l}</span></div>`).join('')}
       <div class="card"><b>${cnt(f => activity(f).due)}</b><span class="muted">Prüfung fällig</span></div>
       <div class="card"><b>${cnt(f => activity(f).cls === 'no')}</b><span class="muted">inaktiv?</span></div>
+      <div class="card"><b>${cnt(f => activity(f).ignores)}</b><span class="muted">spielt, interagiert nicht</span></div>
     </div>
     <div class="bar">
       <button class="b p" id="addF">+ Freund</button>
       <input id="fq" placeholder="Suchen (Name, Region, Code…)" value="${esc(FF.q)}" style="flex:1;min-width:160px">
-      <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['lucky', 'Glücksfreunde'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['ignores', 'Spielt, interagiert nicht'], ['frstall', 'Freundschaft stockt'], ['lucky', 'Glücksfreunde'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Nächste Prüfung zuerst'], ['stale', 'Am längsten ohne Änderung'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map(f => friendCard(f, A.get(f.id))).join('')}</div>
@@ -896,8 +915,9 @@ function friendCard(f, ac){
     <div class="prog"><i style="width:${pr.pct}%"></i></div>
     <div class="note">${pr.next ? `Noch <b>${pr.left}</b> ${pr.unit} bis <b>${pr.next}</b>${eta ? ` · ${eta}` : ''}` : `Höchstes Level erreicht 🎉${f.left != null ? ` · Zähler laut Spiel: ${f.left}` : ''}`}</div>
     <div class="row" style="margin-top:10px">
-      <span class="st ${ac.cls}">${ac.txt}</span>${ac.due ? '<span class="st lo">Prüfung fällig</span>' : ''}<span class="note sp">${ac.detail}</span>
+      ${ac.play || ac.fr ? [ac.play ? `<span class="st ${ac.play.cls}" title="Aus den EP">Spielt: ${ac.play.txt}</span>` : '', ac.fr ? `<span class="st ${ac.fr.cls}" title="Aus Freundeslevel und Resttagen">Freundschaft: ${ac.fr.txt}</span>` : ''].join('') : `<span class="st ${ac.cls}">${ac.txt}</span>`}${ac.ignores ? '<span class="st no" title="EP ändern sich, aber kein Fortschritt bei der Freundschaft">Spielt, interagiert nicht</span>' : ''}${ac.due ? '<span class="st lo">Prüfung fällig</span>' : ''}
     </div>
+    ${ac.detail ? `<div class="note" style="margin-top:4px">${ac.detail}</div>` : ''}
     <div class="note" style="margin-top:4px">Geprüft ${short(f.lastCheck)}${ac.checkAge != null ? ` (vor ${ac.checkAge} T)` : ''}${ac.nextCheck ? ` · nächste Prüfung ${short(ac.nextCheck)}` : ''} · EP geändert ${short(f.xpChanged)} · Freundschaft geändert ${short(f.friendChanged)}</div>
     ${pats.length ? `<div class="note" style="margin-top:4px">Vivillon: ${pats.map(k => vivDot(k) + esc(VIVMAP[k]?.[1])).join(', ')}</div>` : ''}
     ${cards.length ? `<div class="note" style="margin-top:2px">${cards.length} Postkarte${cards.length === 1 ? '' : 'n'}</div>` : ''}
@@ -957,6 +977,7 @@ function checkFriend(f){
       <label>Resttage/-punkte<input name="left" type="number" min="0" max="90" value="${f.left ?? ''}"></label>
     </div>
     <p class="note">Bei den EP zählen nur die <b>letzten 4 Ziffern</b> der Gesamt-EP aus dem Profil (aus 12.345.678 wird 5678). Gibst du die volle Zahl ein, kürzt das Tool sie automatisch.</p>
+    <p class="note">„Freundschaft stockt“ ist nur aussagekräftig, wenn du selbst regelmäßig Geschenke schickst und seine öffnest – sonst stockt sie auch ohne sein Zutun.</p>
     <p class="note">Letzte Prüfung: Lv ${c.lvl ?? '–'} · EP ${xpFmt(c.xp)} · ${c.level != null ? FL[c.level] : '–'} · Rest ${c.left ?? '–'}</p>`, navBtns('check', f.id),
     (fd, act) => {
       // Prüfen: „Überspringen“ und „Zurück“ speichern nichts, „Speichern & weiter“ speichert die Prüfung
