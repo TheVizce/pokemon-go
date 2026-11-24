@@ -76,6 +76,7 @@ button.d{color:var(--bad)}
 .sp{flex:1}
 .hearts{font-size:15px;letter-spacing:2px}
 .st{font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px}
+.toast{position:fixed;left:50%;bottom:calc(60px + env(safe-area-inset-bottom));transform:translateX(-50%);width:max-content;z-index:50;background:var(--card,#222);color:inherit;border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.25);border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;max-width:min(460px, calc(100vw - 24px));font-size:14px}
 .st.ok{background:#dcf5e7;color:#16774a}.st.lo{background:#fff1d6;color:#8a5a00}.st.no{background:#ffe0e0;color:#a52a2a}.st.uk{background:var(--line);color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:14px}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
@@ -993,7 +994,29 @@ function renderFriends(){
     const a = b.dataset.act;
     if (a === 'edit') return editFriend(f);
     if (a === 'check') return checkFriend(f);
+    if (a === 'vivplus') return vivPlus(f.viv);
   });
+}
+// Kurze Rückmeldung unten mit optionalem „Rückgängig“
+let TOAST_T = 0;
+function toast(html, undo){
+  document.querySelector('.toast')?.remove(); clearTimeout(TOAST_T);
+  const t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status');
+  t.innerHTML = `<span>${html}</span>${undo ? '<button class="b s" type="button">Rückgängig</button>' : ''}`;
+  if (undo) t.querySelector('button').onclick = () => { t.remove(); undo(); };
+  document.body.appendChild(t); TOAST_T = setTimeout(() => t.remove(), 6000);
+}
+// Postkarte eines Musters mitzählen (Stand wie in der Medaille). Bei Erreichen des Ziels gibt es die Purmel-Begegnung,
+// der Zähler beginnt beim nächsten Ziel neu (3 → 9 → 15 → 15 …).
+function vivPlus(k){
+  if (!VIVMAP[k]) return;
+  const VC = S.vivCards || (S.vivCards = {}), before = VC[k] ? { ...VC[k] } : null;
+  const c = VC[k] || { p: 0, goal: 3 }, goal = c.goal || 3, p = (c.p ?? 0) + 1;
+  let msg;
+  if (p >= goal){ const next = goal === 3 ? 9 : 15; VC[k] = { p: 0, goal: next, date: today() }; msg = `${vivDot(k)}<b>${VIVMAP[k][1]}</b>: ${goal} / ${goal} – 🐛 Purmel-Begegnung! Neuer Zähler 0 / ${next}`; }
+  else { VC[k] = { p, goal, date: today() }; msg = `${vivDot(k)}<b>${VIVMAP[k][1]}</b>: ${p} / ${goal} · noch ${goal - p} bis Purmel`; }
+  save(); if (TAB === 'viv') renderViv();
+  toast(msg, () => { if (before) VC[k] = before; else delete VC[k]; save(); if (TAB === 'viv') renderViv(); toast(`${vivDot(k)}<b>${VIVMAP[k][1]}</b>: wieder ${before?.p ?? 0} / ${before?.goal ?? 3}`); });
 }
 function friendCard(f, ac, rs){
   ac = ac || activity(f);
@@ -1019,6 +1042,7 @@ function friendCard(f, ac, rs){
     ${f.viv && VIVMAP[f.viv] ? `<div class="note" style="margin-top:4px">Vivillon: ${vivDot(f.viv)}${esc(VIVMAP[f.viv][1])}${vivMismatch(f) ? ` <span class="st lo" title="${vivOfMap(f) ? 'Laut Karte: ' + esc(VIVMAP[vivOfMap(f)]?.[1]) : 'Laut Tabelle gibt es dieses Muster in ' + esc(countryName(f.country)) + ' nicht'}">passt nicht${vivOfMap(f) ? ' – Karte: ' + esc(VIVMAP[vivOfMap(f)]?.[1]) : ' zum Land'}</span>` : ''}</div>` : ''}
     <div class="row" style="margin-top:10px">
       <button class="b s ${ac.due ? 'p' : ''}" data-act="check" data-id="${f.id}">Prüfen</button>
+      ${f.viv && VIVMAP[f.viv] && VIV.indexOf(VIVMAP[f.viv]) < 18 ? `<button class="b s" data-act="vivplus" data-id="${f.id}" title="Postkarte mit ${esc(VIVMAP[f.viv][1])} angepinnt – Zähler im Vivillon-Tab +1">${vivDot(f.viv)}+1 Postkarte</button>` : ''}
     </div>
   </div>`;
 }
