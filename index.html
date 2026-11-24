@@ -76,6 +76,11 @@ button.d{color:var(--bad)}
 .sp{flex:1}
 .hearts{font-size:15px;letter-spacing:2px}
 .st{font-size:12px;font-weight:700;padding:2px 8px;border-radius:99px}
+.capbar{position:sticky;top:var(--stick,0px);z-index:5;background:var(--bg);padding:6px 0 8px;border-bottom:1px solid var(--line)}
+.capjump{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:3px;margin-top:6px;scrollbar-width:none}.capjump a{flex:0 0 auto;min-width:26px;text-align:center;padding:3px 4px;border-radius:6px;font-size:13px;font-weight:700;text-decoration:none;color:inherit;background:var(--line)}
+.caplist{display:flex;flex-direction:column;margin-bottom:80px}.caphead{font-weight:800;font-size:13px;color:var(--muted);padding:10px 4px 2px;scroll-margin-top:150px}
+.caprow{display:flex;gap:8px;align-items:center;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:10px 6px;font:inherit;color:inherit;cursor:pointer;min-height:42px}
+.caprow.on{background:color-mix(in srgb,#f5b400 18%,transparent);font-weight:700}.capgift{width:22px;text-align:center}
 .toast{position:fixed;left:50%;bottom:calc(60px + env(safe-area-inset-bottom));transform:translateX(-50%);width:max-content;z-index:50;background:var(--card,#222);color:inherit;border:1px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.25);border-radius:12px;padding:10px 14px;display:flex;gap:10px;align-items:center;max-width:min(460px, calc(100vw - 24px));font-size:14px}
 .st.ok{background:#dcf5e7;color:#16774a}.st.lo{background:#fff1d6;color:#8a5a00}.st.no{background:#ffe0e0;color:#a52a2a}.st.uk{background:var(--line);color:var(--muted)}
 table{width:100%;border-collapse:collapse;font-size:14px}
@@ -645,7 +650,7 @@ function migrateFriends(){
 /* ===================== Rendering ===================== */
 let TAB = 'mons';
 const F = { q: '', sort: 'new', flt: '', lim: 120 };
-const FF = { q: '', sort: 'level', flt: '', lim: 60 };
+const FF = { q: '', sort: 'level', flt: '', lim: 60, capture: false };
 document.getElementById('tabs').onclick = e => { const t = e.target.dataset.t; if (!t) return; TAB = t; document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t)); render(); };
 function render(){
   refreshLists();
@@ -936,6 +941,7 @@ function editMon(p){
 
 /* ---------- Freunde ---------- */
 function renderFriends(){
+  if (FF.capture) return renderGiftCapture();
   let list = S.friends.slice();
   const q = FF.q.trim().toLowerCase();
   if (q) list = list.filter(f => [f.name, f.code, f.notes, f.region, countryName(f.country), f.viv && VIVMAP[f.viv] ? VIVMAP[f.viv][1] : ''].join(' ').toLowerCase().includes(q));
@@ -986,12 +992,13 @@ function renderFriends(){
       <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Nächste Prüfung zuerst'], ['stale', 'Am längsten ohne Änderung'], ['origin', 'Herkunft'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${fl === 'gifts' ? (() => { const n = giftsToday(), lim = giftLimit(), w = S.friends.filter(f => f.giftWaiting).length; return `<div class="card" style="margin-bottom:10px"><div class="row"><b class="sp">🎁 Heute geöffnet: ${n} / ${lim}${n >= lim ? ' – Limit erreicht' : ` · noch ${lim - n}`}</b><label class="note" style="display:flex;gap:6px;align-items:center">Limit pro Tag <input type="number" id="giftLim" min="1" max="100" value="${lim}" style="width:64px"></label></div>
-      <p class="note" style="margin:6px 0 0">${w} Geschenk${w === 1 ? '' : 'e'} vorgemerkt. Öffne von oben nach unten: zuerst Freunde, bei denen die Freundschaft steigt und von denen du am längsten nichts geöffnet hast. Vormerken: auf der Kachel „🎁 Geschenk da“ (Filter „Alle“ + Suche).</p></div>`; })() : ''}
+      <p class="note" style="margin:6px 0 0">${w} Geschenk${w === 1 ? '' : 'e'} vorgemerkt. Öffne von oben nach unten: zuerst Freunde, bei denen die Freundschaft steigt und von denen du am längsten nichts geöffnet hast. Neue Geschenke vormerken: <button class="b s" id="capOpen">📋 Geschenke erfassen</button></p></div>`; })() : ''}
     ${fl === 'remove' ? `<p class="note">Vorschlag, sortiert nach Punkten (ab ${REMOVE_MIN}). Punkte gibt es für fehlende Aktivität und niedriges Freundeslevel, Abzüge für hohes Level, Glücksfreund und seltene Vivillon-Muster. Nicht bewertet: Reallife-Freunde (${cnt(f => f.irl)}) und Freunde, die seit über ${REMOVE_FRESH} Tagen nicht geprüft wurden (${cnt(f => !f.irl && (!f.lastCheck || daysBetween(f.lastCheck, today()) > REMOVE_FRESH))}).</p>` : ''}
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map((f, i) => friendCard(f, A.get(f.id), fl === 'remove' ? rsOf(f) : null, fl === 'gifts' ? { rank: i + 1, ...gsOf(f) } : null)).join('')}</div>
       ${list.length > FF.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="moreF">Weitere ${Math.min(60, list.length - FF.lim)} anzeigen (${list.length - FF.lim} übrig)</button> <button class="b" id="allF">Alle anzeigen</button></div>` : ''}`
       : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Freunde eingetragen – trag welche ein oder übernimm sie unter „Daten“.'}</div>`}`;
   addF.onclick = () => editFriend();
+  const co = document.getElementById('capOpen'); if (co) co.onclick = () => { FF.capture = true; CAPTURE_NEW = new Set(); renderFriends(); window.scrollTo(0, 0); };
   const gl = document.getElementById('giftLim'); if (gl) gl.onchange = () => { const v = Math.max(1, Math.min(100, Math.round(+gl.value) || 20)); try{ localStorage.setItem(GIFT_LIMIT_KEY, String(v)); }catch(e){} renderFriends(); };
   const mf = document.getElementById('moreF'); if (mf) mf.onclick = () => { FF.lim += 60; renderFriends(); };
   const af = document.getElementById('allF'); if (af) af.onclick = () => { FF.lim = 1e6; renderFriends(); };
@@ -1041,6 +1048,37 @@ function giftOpen(f){
   f.giftWaiting = false; f.giftOpened = today(); save(); renderFriends();
   const n = giftsToday(), lim = giftLimit();
   toast(`🎁 <b>${esc(f.name)}</b> geöffnet · heute ${n} / ${lim}${n >= lim ? ' – Limit erreicht' : ` · noch ${lim - n}`}`, () => { f.giftWaiting = before.w; f.giftOpened = before.o; save(); renderFriends(); });
+}
+// Erfassen-Liste: alle Freunde kompakt nach Name (wie die Freundesliste im Spiel), Tipp = Geschenk vormerken/entfernen
+const nameCmp = (a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base', numeric: false });
+let CAPTURE_NEW = new Set();
+function renderGiftCapture(){
+  const list = S.friends.slice().sort(nameCmp);
+  const letter = f => { const c = (f.name || '#').trim()[0]?.toUpperCase() || '#'; return /[A-Z]/.test(c) ? c : '#'; };
+  const letters = [...new Set(list.map(letter))];
+  const w = S.friends.filter(f => f.giftWaiting).length;
+  let cur = '';
+  main.innerHTML = `
+    <div class="capbar">
+      <div class="row"><b class="sp">🎁 Geschenke erfassen</b><button class="b p s" id="capDone">Fertig</button></div>
+      <div class="note" id="capInfo">${w} vorgemerkt${CAPTURE_NEW.size ? ` · ${CAPTURE_NEW.size} neu in dieser Runde` : ''} · Tipp auf einen Namen schaltet um. Sortiert nach Name wie im Spiel.</div>
+      <div class="capjump">${letters.map(l => `<a href="#cap-${l}">${l}</a>`).join('')}</div>
+    </div>
+    <div class="caplist">${list.map(f => { const l = letter(f), head = l !== cur ? (cur = l, `<div class="caphead" id="cap-${l}">${l}</div>`) : '';
+      return head + `<button type="button" class="caprow${f.giftWaiting ? ' on' : ''}" data-cap="${f.id}"><span class="sp">${esc(f.name)}</span>${f.irl ? '<span class="muted">👥</span>' : ''}<span class="muted">${'♥'.repeat(f.level || 0)}</span><span class="capgift">${f.giftWaiting ? '🎁' : ''}</span></button>`; }).join('')}</div>`;
+  main.querySelectorAll('[data-cap]').forEach(b => b.onclick = () => {
+    const f = S.friends.find(x => x.id === b.dataset.cap); if (!f) return;
+    f.giftWaiting = !f.giftWaiting;
+    if (f.giftWaiting) CAPTURE_NEW.add(f.id); else CAPTURE_NEW.delete(f.id);
+    b.classList.toggle('on', !!f.giftWaiting); b.querySelector('.capgift').textContent = f.giftWaiting ? '🎁' : '';
+    const n = S.friends.filter(x => x.giftWaiting).length;
+    document.getElementById('capInfo').innerHTML = `${n} vorgemerkt${CAPTURE_NEW.size ? ` · ${CAPTURE_NEW.size} neu in dieser Runde` : ''} · Tipp auf einen Namen schaltet um. Sortiert nach Name wie im Spiel.`;
+    save();
+  });
+  const hh = document.querySelector('header')?.offsetHeight || 0, bar = main.querySelector('.capbar');
+  bar.style.top = hh + 'px';
+  main.querySelectorAll('.capjump a').forEach(a => a.onclick = e => { e.preventDefault(); const t = document.getElementById(a.getAttribute('href').slice(1)); if (t) window.scrollTo(0, t.getBoundingClientRect().top + window.scrollY - hh - bar.offsetHeight); });
+  document.getElementById('capDone').onclick = () => { FF.capture = false; FF.flt = 'gifts'; const n = CAPTURE_NEW.size; CAPTURE_NEW = new Set(); renderFriends(); window.scrollTo(0, 0); if (n) toast(`🎁 ${n} neue Geschenk${n === 1 ? '' : 'e'} vorgemerkt`); };
 }
 // Kurze Rückmeldung unten mit optionalem „Rückgängig“
 let TOAST_T = 0;
@@ -1121,7 +1159,7 @@ function friendCard(f, ac, rs, gs){
       <button class="b s ${ac.due ? 'p' : ''}" data-act="check" data-id="${f.id}">Prüfen</button>
       ${f.viv && VIVMAP[f.viv] && VIV.indexOf(VIVMAP[f.viv]) < 18 ? `<button class="b s" data-act="vivplus" data-id="${f.id}" title="Postkarte mit ${esc(VIVMAP[f.viv][1])} angepinnt – Zähler im Vivillon-Tab +1">${vivDot(f.viv)}+1 Postkarte</button>` : ''}
       ${f.giftWaiting ? `<button class="b s p" data-act="giftopen" data-id="${f.id}" title="Geschenk im Spiel geöffnet">🎁 Geöffnet</button><button class="b s" data-act="giftunmark" data-id="${f.id}" title="Vormerkung entfernen">✕</button>`
-        : `<button class="b s" data-act="giftmark" data-id="${f.id}" title="Von diesem Freund liegt ein Geschenk bereit"${f.giftOpened === today() ? ' disabled' : ''}>🎁 ${f.giftOpened === today() ? 'heute geöffnet' : 'Geschenk da'}</button>`}
+        : `<button class="b s" data-act="giftmark" data-id="${f.id}" title="Von diesem Freund liegt ein Geschenk bereit${f.giftOpened === today() ? ' (heute schon eins geöffnet)' : ''}">🎁 Geschenk da</button>`}
       <button class="b s" data-act="vivother" data-id="${f.id}" title="Postkarte von einem anderen Ort – Muster über Ortssuche">+1 andere…</button>
     </div>
   </div>`;
