@@ -391,20 +391,21 @@ function monPic(p){
 const nameOf = id => DEX[id]?.de || DEX[id]?.en || '';
 
 /* ===================== Vivillon ===================== */
+// Vivillon-Muster in der Reihenfolge und mit den Namen des deutschen Pokémon GO (Schlüssel = englische Namen, nie ändern)
 const VIV = [
-  ['archipelago','Archipel','Archipelago','#d9a54a'], ['continental','Kontinental','Continental','#e8c63b'],
-  ['elegant','Pracht','Elegant','#7a5bb7'], ['garden','Garten','Garden','#4f9d5b'],
-  ['highplains','Dünen','High Plains','#d0832e'], ['icysnow','Schneefeld','Icy Snow','#b9c9d6'],
-  ['jungle','Dschungel','Jungle','#3f8f7b'], ['marine','Aquamarin','Marine','#4f7fd0'],
-  ['meadow','Blumen','Meadow','#e57fa2'], ['modern','Modern','Modern','#c84a3c'],
-  ['monsoon','Monsun','Monsoon','#6a7c8c'], ['ocean','Ozean','Ocean','#e77a4a'],
-  ['polar','Polar','Polar','#4e6fa8'], ['river','Fluss','River','#a7865a'],
-  ['sandstorm','Sandsturm','Sandstorm','#c9ad7a'], ['savanna','Savanne','Savanna','#3e9fa3'],
-  ['sun','Sonnen','Sun','#e5533d'], ['tundra','Tundra','Tundra','#7fb0dd'],
+  ['icysnow','Frost','Icy Snow','#b9c9d6'], ['polar','Schneefeld','Polar','#4e6fa8'],
+  ['tundra','Flocke','Tundra','#7fb0dd'], ['continental','Kontinental','Continental','#e8c63b'],
+  ['garden','Ziergarten','Garden','#4f9d5b'], ['elegant','Prunk','Elegant','#7a5bb7'],
+  ['meadow','Blumenmeer','Meadow','#e57fa2'], ['modern','Innovation','Modern','#c84a3c'],
+  ['marine','Aquamarin','Marine','#4f7fd0'], ['archipelago','Archipel','Archipelago','#d9a54a'],
+  ['highplains','Dürre','High Plains','#d0832e'], ['sandstorm','Sand','Sandstorm','#c9ad7a'],
+  ['river','Flussdelta','River','#a7865a'], ['monsoon','Monsun','Monsoon','#6a7c8c'],
+  ['savanna','Savanne','Savanna','#3e9fa3'], ['sun','Sonne','Sun','#e5533d'],
+  ['ocean','Ozean','Ocean','#e77a4a'], ['jungle','Dschungel','Jungle','#3f8f7b'],
   ['fancy','Fächer (Event)','Fancy','#e9a3c4'], ['pokeball','Pokéball (Event)','Poké Ball','#d23b3b']
 ];
 const VIVMAP = Object.fromEntries(VIV.map(v => [v[0], v]));
-const vivLabel = k => VIVMAP[k] ? `${VIVMAP[k][1]}muster (${VIVMAP[k][2]})`.replace(' (Event)muster', 'muster (Event)') : '';
+const vivLabel = k => VIVMAP[k] ? `${VIVMAP[k][1]} (${VIVMAP[k][2]})` : '';
 const vivDot = k => VIVMAP[k] ? `<span class="dot" style="background:${VIVMAP[k][3]}"></span>` : '';
 // Grobe Startvorschläge. Muster hängen von der Region innerhalb eines Landes ab –
 // das Tool merkt sich deine eigenen Zuordnungen und schlägt diese bevorzugt vor.
@@ -596,6 +597,7 @@ function renderMons(){
   if (fl === 'lucky') list = list.filter(p => p.lucky);
   if (fl === 'hundo') list = list.filter(p => ivPct(p) === 100);
   if (fl === 'fav') list = list.filter(p => p.fav);
+  if (fl === 'vivnone') list = list.filter(p => VIV_LINE.includes(p.dex) && !p.viv);
   if (fl === 'dyna') list = list.filter(p => p.dyna);
   if (fl === 'move') list = list.filter(p => p.specialMove);
   if (fl === 'mega') list = list.filter(p => p.mega);
@@ -634,7 +636,7 @@ function renderMons(){
     <div class="bar">
       <button class="b" id="pgImp">Poke Genie abgleichen</button>
       <input id="q" placeholder="Suchen, z. B. Evoli & Blitza & Flamara" title="Mehrere Suchbegriffe mit & , ; oder | trennen – angezeigt wird, was zu irgendeinem passt. Mit + verknüpfen, wenn alles zutreffen soll (z. B. Glurak + Luftschnitt). In Anführungszeichen = genauer Name (z. B. &quot;Mew&quot; ohne Mewtu)." value="${esc(F.q)}" style="flex:1;min-width:180px">
-      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['mega', 'Mit Mega-/Proto-Level'], ['adv', 'Mit Abenteuereffekt'], ['notes', 'Mit Notiz'], ['remote', 'Fern-Raid'], ['loc', 'Mit Fangort'], ['pgmissing', 'Nicht mehr im Export'], ['form', 'Mit Form'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="flt">${[['', 'Alle'], ['shiny', 'Shiny'], ['costume', 'Mit Kostüm'], ['shadow', 'Crypto'], ['purified', 'Erlöst'], ['lucky', 'Glücks'], ['hundo', '100 %'], ['dyna', 'Dynamax/Gigadynamax'], ['move', 'Spezialattacke'], ['mega', 'Mit Mega-/Proto-Level'], ['adv', 'Mit Abenteuereffekt'], ['notes', 'Mit Notiz'], ['remote', 'Fern-Raid'], ['loc', 'Mit Fangort'], ['pgmissing', 'Nicht mehr im Export'], ['form', 'Mit Form'], ['bg', 'Mit Hintergrund'], ['bgspecial', 'Spezial-Hintergrund'], ['big', 'XL + XXL'], ['XXL', 'nur XXL'], ['small', 'XS + XXS'], ['XXS', 'nur XXS'], ['fav', 'Favoriten'], ['vivnone', 'Purmel-Linie ohne Muster']].map(([v, l]) => `<option value="${v}" ${F.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="sort">${[['new', 'Neueste'], ['dex', 'Pokédex-Nr.'], ['cp', 'WP'], ['iv', 'IV'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${F.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid">${list.slice(0, F.lim).map(monCard).join('')}</div>
@@ -740,7 +742,7 @@ function editMon(p){
       <label>Name des Hintergrunds<input name="bgName" list="dlBg" value="${esc(p.bgName)}" placeholder="z. B. GO Fest 2026"></label>
       <label id="megaWrap" style="display:none"><span id="megaLbl">Mega-Level</span><select name="mega">${MEGA_LV.map((l, i) => `<option value="${i || ''}" ${(p.mega || 0) === i ? 'selected' : ''}>${l || '– noch nie'}</option>`).join('')}</select></label>
       <label>Dynamax<select name="dyna">${o('', '–', p.dyna || '')}${o('dmax', 'Dynamax', p.dyna)}${o('giga', 'Gigadynamax', p.dyna)}</select></label>
-      <label id="vivWrap" style="display:none">Vivillon-Muster<select name="viv"><option value="">–</option>${VIV.map(v => o(v[0], v[1] + 'muster', p.viv)).join('')}</select></label>
+      <label id="vivWrap" style="display:none">Vivillon-Muster<select name="viv"><option value="">–</option>${VIV.map(v => o(v[0], v[1], p.viv)).join('')}</select></label>
       <label class="chk"><input type="checkbox" name="shiny" ${p.shiny ? 'checked' : ''}> ✨ Shiny</label>
       <label class="chk"><input type="checkbox" name="lucky" ${p.lucky ? 'checked' : ''}> Glücks</label>
       <label class="chk"><input type="checkbox" name="fav" ${p.fav ? 'checked' : ''}> ★ Favorit</label>
@@ -915,7 +917,7 @@ function friendCard(f, ac){
     </div>
     ${ac.detail ? `<div class="note" style="margin-top:4px">${ac.detail}</div>` : ''}
     <div class="note" style="margin-top:4px">Geprüft ${short(f.lastCheck)}${ac.checkAge != null ? ` (vor ${ac.checkAge} T)` : ''}${ac.nextCheck ? ` · nächste Prüfung ${short(ac.nextCheck)}` : ''} · EP geändert ${short(f.xpChanged)} · Freundschaft geändert ${short(f.friendChanged)}</div>
-    ${f.viv && VIVMAP[f.viv] ? `<div class="note" style="margin-top:4px">Vivillon: ${vivDot(f.viv)}${esc(VIVMAP[f.viv][1])}muster</div>` : ''}
+    ${f.viv && VIVMAP[f.viv] ? `<div class="note" style="margin-top:4px">Vivillon: ${vivDot(f.viv)}${esc(VIVMAP[f.viv][1])}</div>` : ''}
     <div class="row" style="margin-top:10px">
       <button class="b s ${ac.due ? 'p' : ''}" data-act="check" data-id="${f.id}">Prüfen</button>
     </div>
@@ -1019,7 +1021,7 @@ function migratePostcards(){
     if (!f) continue;
     if (!f.region && c.region) f.region = c.region;
     if (!f.viv && c.viv) f.viv = c.viv;
-    const line = 'Postkarte: ' + [c.place, c.region, c.viv && VIVMAP[c.viv] ? VIVMAP[c.viv][1] + 'muster' : '', c.date ? fmtDate(c.date) : '', c.notes].filter(Boolean).join(', ');
+    const line = 'Postkarte: ' + [c.place, c.region, c.viv && VIVMAP[c.viv] ? 'Muster ' + VIVMAP[c.viv][1] : '', c.date ? fmtDate(c.date) : '', c.notes].filter(Boolean).join(', ');
     if (line !== 'Postkarte: ' && !(f.notes || '').includes(line)) f.notes = (f.notes ? f.notes.replace(/\s+$/, '') + '\n' : '') + line;
     c.moved = true; ch = true;
   }
@@ -1037,9 +1039,21 @@ function migrateVivCards(){
   }
   return ch;
 }
-const vivOptions = sel => `<option value="">unbekannt</option>${VIV.slice(0, 18).map(v => `<option value="${v[0]}" ${sel === v[0] ? 'selected' : ''}>${v[1]}muster (${v[2]})</option>`).join('')}`;
+const vivOptions = sel => `<option value="">unbekannt</option>${VIV.slice(0, 18).map(v => `<option value="${v[0]}" ${sel === v[0] ? 'selected' : ''}>${v[1]}</option>`).join('')}`;
 
 /* ---------- Vivillon ---------- */
+const VIV_LINE = [664, 665, 666];
+// Bester Wert pro Muster über die ganze Entwicklungsreihe (Purmel, Puponcho, Vivillon) aus den eingetragenen Pokémon
+function vivBest(k, shiny){
+  let best = null;
+  for (const p of S.pokemon){
+    if (!VIV_LINE.includes(p.dex) || p.viv !== k || (shiny && !p.shiny)) continue;
+    const v = ivPct(p), sum = p.ivA == null ? -1 : p.ivA + p.ivD + p.ivH;
+    if (!best || sum > best.sum) best = { p, v, sum };
+  }
+  return best;
+}
+const vivBestTxt = b => !b ? '–' : b.v == null ? 'vorhanden, IV fehlen' : `<a href="#" data-vmon="${b.p.id}">${b.v} %</a> <span class="muted">(${b.p.ivA}/${b.p.ivD}/${b.p.ivH} · ${esc(DEX[b.p.dex]?.de || b.p.name || '')})</span>`;
 function renderViv(){
   const pats = VIV.slice(0, 18);
   const owned = k => S.pokemon.some(p => p.dex === 666 && p.viv === k);
@@ -1054,7 +1068,8 @@ function renderViv(){
       <div class="card"><b>${pats.filter(v => started(v[0])).length} / 18</b><span class="muted">Muster mit Postkarten</span></div>
       <div class="card"><b>${pats.filter(v => soon(v[0])).length}</b><span class="muted">nur noch 1 Karte bis Purmel</span></div>
     </div>
-    <p class="note">Trag pro Muster den Stand aus der Vivillon-Medaille ein, z. B. 4 / 15. Die erste Purmel-Begegnung gibt es nach 3 Karten, die zweite nach 9 weiteren, danach alle 15. Besitz wird aus deinen Pokémon (Purmel/Puponcho/Vivillon mit Muster) erkannt, die Freunde aus dem Muster beim Freund.</p>
+    ${(() => { const n = S.pokemon.filter(p => VIV_LINE.includes(p.dex) && !p.viv).length; return n ? `<p class="note">⚠️ ${n} Purmel/Puponcho/Vivillon ohne Muster – sie zählen bei den besten IV nicht mit. Poke Genie exportiert das Muster nicht. <a href="#" id="vivNone">Anzeigen und Muster eintragen</a></p>` : ''; })()}
+    <p class="note">Trag pro Muster den Stand aus der Vivillon-Medaille ein, z. B. 4 / 15. Die erste Purmel-Begegnung gibt es nach 3 Karten, die zweite nach 9 weiteren, danach alle 15. Besitz und beste IV kommen aus deinen Pokémon (Purmel/Puponcho/Vivillon mit Muster), die Freunde aus dem Muster beim Freund.</p>
     <div class="viv">${pats.map(v => {
       const c = VC[v[0]] || {}, goal = c.goal || 3, pr = c.p ?? null;
       const pct = pr == null ? 0 : Math.min(100, pr / goal * 100);
@@ -1065,9 +1080,13 @@ function renderViv(){
         <div class="row" style="gap:4px;margin:6px 0;flex-wrap:nowrap"><input type="number" min="0" max="15" inputmode="numeric" data-vp="${v[0]}" value="${pr ?? ''}" placeholder="–" style="width:56px" aria-label="Karten"> <b>/</b> <select data-vg="${v[0]}" aria-label="Ziel">${VIV_GOALS.map(g => `<option value="${g}" ${g === goal ? 'selected' : ''}>${g}</option>`).join('')}</select></div>
         <div class="prog"><i style="width:${pct}%;background:${v[3]}"></i></div>
         <div class="note">${pr == null ? 'noch nicht eingetragen' : pr >= goal ? 'Purmel-Begegnung fällig' : `noch ${goal - pr} bis Purmel`}${c.date ? `<br>Stand ${fmtDate(c.date)}` : ''}</div>
+        <div class="note" style="margin-top:4px">Beste IV: ${vivBestTxt(vivBest(v[0]))}<br>Beste Shiny: ${vivBestTxt(vivBest(v[0], true))}</div>
         ${friends.length ? `<div class="note" style="margin-top:4px">Freunde: ${friends.map(esc).join(', ')}</div>` : ''}
       </div>`;
     }).join('')}</div>`;
+  main.querySelectorAll('[data-vmon]').forEach(a => a.onclick = e => { e.preventDefault(); editMon(S.pokemon.find(p => p.id === a.dataset.vmon)); });
+  const vn = document.getElementById('vivNone');
+  if (vn) vn.onclick = e => { e.preventDefault(); F.flt = 'vivnone'; F.q = ''; document.querySelector('#tabs [data-t=mons]').click(); };
   const upd = k => {
     const p = num(main.querySelector(`[data-vp="${k}"]`).value), goal = +main.querySelector(`[data-vg="${k}"]`).value;
     const old = VC[k] || {};
