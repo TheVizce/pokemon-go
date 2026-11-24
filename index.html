@@ -150,7 +150,7 @@ body{padding-left:env(safe-area-inset-left);padding-right:env(safe-area-inset-ri
 <datalist id="dlBg"></datalist>
 <datalist id="dlForms"></datalist>
 <datalist id="dlPlaces"></datalist>
-<datalist id="dlRegion"></datalist>
+<datalist id="dlRegion"></datalist><datalist id="dlCountry"></datalist>
 
 <!-- GitHub-Sync (gemeinsam für alle Tools, Einstellungen auf der Startseite) -->
 <script src="/startseite/sync-v1.js"></script>
@@ -270,7 +270,7 @@ async function initStore(){
   }
   try{ for (const k of ['go-organizer-dex', 'go-organizer-dex-v2']) localStorage.removeItem(k); }catch(e){}
   if (S.pokemon.some(p => 'pvp' in p)){ S.pokemon.forEach(p => delete p.pvp); save(); }
-  if (migrateFriends() | migrateXpDigits() | migrateCostumeKeys() | migratePostcards() | migrateVivCards()) save();
+  if (migrateFriends() | migrateXpDigits() | migrateCostumeKeys() | migratePostcards() | migrateVivCards() | migrateOrigin()) save();
   try{ REV = (await idbGet(REV_KEY)) || null; if (REV) REV.done ||= {}, REV.dec ||= {}; }catch(e){ REV = null; }
   try{ if (navigator.storage?.persist) PERSISTED = (await navigator.storage.persisted()) || (await navigator.storage.persist()); }catch(e){}
 }
@@ -407,33 +407,70 @@ const VIV = [
 const VIVMAP = Object.fromEntries(VIV.map(v => [v[0], v]));
 const vivLabel = k => VIVMAP[k] ? `${VIVMAP[k][1]} (${VIVMAP[k][2]})` : '';
 const vivDot = k => VIVMAP[k] ? `<span class="dot" style="background:${VIVMAP[k][3]}"></span>` : '';
-// Grobe Startvorschläge. Muster hängen von der Region innerhalb eines Landes ab –
-// das Tool merkt sich deine eigenen Zuordnungen und schlägt diese bevorzugt vor.
-const VIV_HINTS = {
-  'deutschland':['continental','meadow'], 'niedersachsen':['continental'], 'österreich':['meadow','continental'],
-  'schweiz':['meadow'], 'frankreich':['meadow'], 'portugal':['marine'], 'spanien':['marine','sun'],
-  'italien':['marine','meadow'], 'großbritannien':['meadow','marine'], 'vereinigtes königreich':['meadow','marine'],
-  'japan':['elegant','garden','continental','tundra'], 'hawaii':['ocean'], 'australien':['river','garden'],
-  'neuseeland':['garden'], 'brasilien':['savanna','jungle'], 'indien':['monsoon','sandstorm'],
-  'ägypten':['sandstorm'], 'saudi-arabien':['sandstorm'], 'mexiko':['sun','highplains'],
-  'usa':['modern','highplains','polar','icysnow','archipelago','ocean'], 'kanada':['polar','icysnow','tundra'],
-  'karibik':['archipelago'], 'kuba':['archipelago'], 'jamaika':['archipelago'], 'puerto rico':['archipelago'],
-  'indonesien':['jungle'], 'malaysia':['jungle'], 'thailand':['monsoon','jungle'], 'russland':['tundra','continental','polar'],
-  'chile':['ocean','marine'], 'argentinien':['marine','savanna']
-};
-const FLAG_COUNTRY = { '🇩🇪': 'deutschland', '🇦🇹': 'österreich', '🇨🇭': 'schweiz', '🇫🇷': 'frankreich', '🇵🇹': 'portugal', '🇪🇸': 'spanien', '🇮🇹': 'italien', '🇬🇧': 'großbritannien', '🇯🇵': 'japan', '🇦🇺': 'australien', '🇳🇿': 'neuseeland', '🇧🇷': 'brasilien', '🇮🇳': 'indien', '🇲🇽': 'mexiko', '🇺🇸': 'usa', '🇨🇦': 'kanada', '🇮🇩': 'indonesien', '🇦🇷': 'argentinien' };
-function vivSuggest(region){
-  let r = (region || '').trim().toLowerCase(); if (!r) return [];
-  const flag = Object.keys(FLAG_COUNTRY).find(k => r.startsWith(k));
-  r = r.replace(/^(?:[\u{1F1E6}-\u{1F1FF}]{2}|\u{1F3F4}[\u{E0061}-\u{E007A}]+\u{E007F})\s*/u, '').trim();
-  if (!r && flag) r = FLAG_COUNTRY[flag];
-  if (!r) return [];
-  if (flag && !S.regionHints[r] && !VIV_HINTS[r] && VIV_HINTS[FLAG_COUNTRY[flag]] && !Object.keys(S.regionHints).some(k => r.includes(k) || k.includes(r))) return VIV_HINTS[FLAG_COUNTRY[flag]];
-  if (S.regionHints[r]) return [S.regionHints[r]];
-  if (VIV_HINTS[r]) return VIV_HINTS[r];
-  for (const k of Object.keys(S.regionHints)) if (r.includes(k) || k.includes(r)) return [S.regionHints[k]];
-  for (const k of Object.keys(VIV_HINTS)) if (r.includes(k)) return VIV_HINTS[k];
-  return [];
+/* ---------- Herkunft: Land (ISO-Code) + Region (Freitext) ---------- */
+// Mögliche Vivillon-Muster pro Land in Pokémon GO (Quelle: friend-codes.com, Stand 11/2026; USA + Ozean für Hawaii ergänzt).
+// Innerhalb eines Landes hängt das Muster von der Gegend ab – die Tabelle ist nur Vorschlag und Plausibilitätsprüfung.
+const VIV_COUNTRY = {AD:'meadow marine',AE:'sandstorm',AF:'sandstorm',AG:'archipelago',AL:'marine',AM:'highplains sandstorm',AO:'river sun jungle',AR:'polar continental marine savanna',AT:'meadow marine',AU:'garden river sun',AZ:'highplains sandstorm',BA:'marine',BB:'archipelago ocean',BD:'monsoon',BE:'continental',BF:'river',BG:'marine',BH:'sandstorm',BI:'jungle',BJ:'river jungle',BN:'jungle',BO:'savanna',BR:'savanna jungle',BS:'archipelago',BT:'monsoon',BW:'river sun',BY:'continental',BZ:'sun',CA:'icysnow polar modern highplains',CD:'sun jungle',CF:'jungle',CH:'meadow',CI:'river jungle',CL:'polar continental marine',CM:'jungle',CO:'archipelago jungle',CR:'jungle',CU:'archipelago',CV:'ocean',CY:'marine sandstorm',CZ:'continental marine',DE:'continental meadow marine',DJ:'sandstorm',DK:'continental',DM:'archipelago',DO:'archipelago',DZ:'river',EC:'jungle',EE:'continental',EG:'sandstorm river',ER:'sandstorm',ES:'meadow marine archipelago',ET:'sandstorm sun',FI:'icysnow polar',FJ:'ocean',FM:'ocean',FR:'continental meadow marine',GA:'jungle',GB:'garden',GD:'archipelago ocean',GE:'marine highplains',GH:'river jungle',GM:'river',GN:'river',GQ:'jungle',GR:'marine',GT:'sun',GW:'river',GY:'jungle',HN:'sun',HR:'marine',HT:'archipelago',HU:'marine',ID:'jungle',IE:'garden',IL:'sandstorm',IN:'continental sandstorm monsoon jungle',IQ:'sandstorm',IR:'sandstorm',IS:'tundra',IT:'meadow marine',JM:'archipelago',JP:'tundra elegant',KE:'sandstorm sun jungle',KG:'highplains',KH:'monsoon jungle',KI:'ocean',KM:'sandstorm sun',KN:'archipelago',KR:'continental',KZ:'polar continental highplains',LA:'monsoon',LB:'sandstorm',LC:'archipelago',LI:'meadow',LK:'jungle',LR:'jungle',LS:'archipelago river sun',LT:'continental',LU:'continental',LV:'continental',LY:'river',MA:'marine river',MC:'meadow',MD:'continental marine',ME:'marine',MG:'sun ocean',MH:'ocean',MK:'marine',ML:'river',MM:'continental monsoon',MN:'polar highplains',MR:'river',MT:'marine',MU:'ocean',MW:'sun',MX:'archipelago highplains sun',MY:'jungle',MZ:'sun',NA:'river sun',NE:'river',NG:'river jungle',NI:'sun',NL:'continental',NO:'icysnow polar tundra continental',NP:'continental monsoon',NR:'ocean',NZ:'garden',OM:'sandstorm',PA:'jungle',PE:'savanna jungle',PG:'jungle',PH:'monsoon jungle',PK:'continental sandstorm',PL:'continental marine',PT:'marine',PY:'savanna',QA:'sandstorm',RO:'marine',RS:'marine',RU:'icysnow polar continental marine highplains',RW:'jungle',SA:'sandstorm',SB:'ocean jungle',SC:'ocean',SD:'sandstorm river',SE:'icysnow polar continental',SG:'jungle',SI:'marine',SK:'continental marine',SL:'river jungle',SM:'marine',SN:'river',SO:'sandstorm sun',SR:'jungle',SS:'jungle',ST:'jungle',SV:'sun',SY:'sandstorm',SZ:'sun',TD:'river',TG:'river jungle',TH:'monsoon',TJ:'highplains',TM:'highplains sandstorm',TN:'marine river',TR:'marine highplains sandstorm',TT:'archipelago ocean jungle',TV:'ocean',TZ:'sun jungle',UA:'continental marine',UG:'jungle',US:'icysnow modern archipelago highplains ocean',UY:'savanna',UZ:'highplains',VC:'archipelago',VE:'archipelago ocean jungle',VN:'continental monsoon jungle',VU:'ocean',WS:'ocean',YE:'sandstorm',ZA:'archipelago river sun',ZM:'sun jungle',ZW:'river sun'};
+const vivOfCountry = c => c && VIV_COUNTRY[c] ? VIV_COUNTRY[c].split(' ') : [];
+const vivMismatch = f => !!(f.viv && f.country && VIV_COUNTRY[f.country] && !vivOfCountry(f.country).includes(f.viv));
+let REGION_DN = null;
+const countryName = c => { if (!c) return ''; try{ REGION_DN ||= new Intl.DisplayNames(['de'], { type: 'region' }); return REGION_DN.of(c) || c; }catch(e){ return c; } };
+const flagOf = c => c && /^[A-Z]{2}$/.test(c) ? String.fromCodePoint(...[...c].map(ch => 0x1F1E6 + ch.charCodeAt(0) - 65)) : '';
+const originTxt = f => [f.country ? flagOf(f.country) + ' ' + countryName(f.country) : '', f.region || ''].filter(Boolean).join(' · ');
+let COUNTRIES = null;   // [{c, name}] aller Länder, deutsch sortiert
+function countryList(){
+  if (COUNTRIES) return COUNTRIES;
+  const skip = new Set(['EU', 'EZ', 'UN', 'QO', 'ZZ', 'AC', 'CP', 'DG', 'EA', 'IC', 'TA', 'CQ', 'AQ', 'BV', 'HM', 'UM']);
+  const out = [];
+  for (let i = 0; i < 26; i++) for (let j = 0; j < 26; j++){
+    const c = String.fromCharCode(65 + i, 65 + j); if (skip.has(c)) continue;
+    const n = countryName(c); if (n && n !== c) out.push({ c, name: n });
+  }
+  return COUNTRIES = out.sort((a, b) => a.name.localeCompare(b.name, 'de'));
+}
+const US_STATES = { AL:'Alabama', AK:'Alaska', AZ:'Arizona', AR:'Arkansas', CA:'Kalifornien', CO:'Colorado', CT:'Connecticut', DE:'Delaware', DC:'Washington, D.C.', FL:'Florida', GA:'Georgia', HI:'Hawaii', ID:'Idaho', IL:'Illinois', IN:'Indiana', IA:'Iowa', KS:'Kansas', KY:'Kentucky', LA:'Louisiana', ME:'Maine', MD:'Maryland', MA:'Massachusetts', MI:'Michigan', MN:'Minnesota', MS:'Mississippi', MO:'Missouri', MT:'Montana', NE:'Nebraska', NV:'Nevada', NH:'New Hampshire', NJ:'New Jersey', NM:'New Mexico', NY:'New York', NC:'North Carolina', ND:'North Dakota', OH:'Ohio', OK:'Oklahoma', OR:'Oregon', PA:'Pennsylvania', RI:'Rhode Island', SC:'South Carolina', SD:'South Dakota', TN:'Tennessee', TX:'Texas', UT:'Utah', VT:'Vermont', VA:'Virginia', WA:'Washington', WV:'West Virginia', WI:'Wisconsin', WY:'Wyoming', PR:'Puerto Rico' };
+const DE_STATES = ['Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen'];
+const GB_PARTS = { eng: 'England', sct: 'Schottland', wls: 'Wales', nir: 'Nordirland' };
+const COUNTRY_ALIAS = { 'usa': 'US', 'us': 'US', 'vereinigte staaten': 'US', 'uk': 'GB', 'großbritannien': 'GB', 'england': 'GB:England', 'schottland': 'GB:Schottland', 'wales': 'GB:Wales', 'nordirland': 'GB:Nordirland', 'korea': 'KR', 'holland': 'NL', 'hawaii': 'US:Hawaii' };
+// Freitext-Herkunft (alt oder aus Importen) in { country, region } zerlegen. Unbekanntes bleibt als Region stehen.
+function parseOrigin(txt){
+  let t = String(txt || '').trim(), country = '', region = '';
+  if (!t) return { country, region };
+  let m = t.match(/^([\u{1F1E6}-\u{1F1FF}])([\u{1F1E6}-\u{1F1FF}])\s*/u);
+  if (m){ country = String.fromCharCode(m[1].codePointAt(0) - 0x1F1E6 + 65, m[2].codePointAt(0) - 0x1F1E6 + 65); t = t.slice(m[0].length).trim(); }
+  else if ((m = t.match(/^\u{1F3F4}((?:[\u{E0061}-\u{E007A}])+)\u{E007F}\s*/u))){
+    const tag = [...m[1]].map(ch => String.fromCharCode(ch.codePointAt(0) - 0xE0000)).join('');
+    if (tag.startsWith('gb')){ country = 'GB'; const part = GB_PARTS[tag.slice(2)]; t = t.slice(m[0].length).trim(); if (!t && part) t = part; }
+  }
+  const low = t.toLowerCase();
+  const byName = n => { for (const x of countryList()) if (x.name.toLowerCase() === n) return x.c; try{ const en = new Intl.DisplayNames(['en'], { type: 'region' }); for (const x of countryList()) if ((en.of(x.c) || '').toLowerCase() === n) return x.c; }catch(e){} return ''; };
+  if (t){
+    const al = COUNTRY_ALIAS[low];
+    const named = al ? al.split(':')[0] : byName(low);
+    if (named && (!country || country === named)){ country = named; t = al && al.includes(':') ? al.split(':')[1] : ''; }
+    else if (/^[A-Z]{2}$/.test(t) && US_STATES[t] && country === 'US'){ country = 'US'; t = US_STATES[t]; }
+    else if (!country){
+      const us = Object.values(US_STATES).find(n => n.toLowerCase() === low);
+      const de = DE_STATES.find(n => n.toLowerCase() === low);
+      if (de){ country = 'DE'; t = de; } else if (us){ country = 'US'; t = us; }
+    }
+  }
+  return { country, region: t };
+}
+// Einmalig: alte Freitext-Herkunft in Land + Region aufteilen (Originaltext bleibt in originOld).
+// Hat das Land laut Tabelle nur ein Muster und ist beim Freund noch keins eingetragen, wird es gesetzt.
+function migrateOrigin(){
+  let ch = false;
+  for (const f of S.friends){
+    if (f.country !== undefined) continue;
+    const old = f.region || '', o = parseOrigin(old);
+    f.country = o.country; f.region = o.region;
+    if (old && old !== originTxt(f)) f.originOld = old;
+    const pv = vivOfCountry(f.country);
+    if (!f.viv && pv.length === 1) f.viv = pv[0];
+    ch = true;
+  }
+  return ch;
 }
 // Purmel-Begegnungen: 3 Karten → 1., +9 → 2., danach je +15
 function vivEncounters(n){ if (n < 3) return [0, 3]; if (n < 12) return [1, 12]; const k = Math.floor((n - 12) / 15); return [2 + k, 12 + 15 * (k + 1)]; }
@@ -566,12 +603,11 @@ function refreshLists(){
   document.getElementById('dlBg').innerHTML = [...bgs].sort().map(c => `<option value="${esc(c)}">`).join('');
   document.getElementById('dlCostume').innerHTML = [...cos].sort().map(c => `<option value="${esc(c)}">`).join('');
   document.getElementById('dlMoves').innerHTML = [...moves].sort().map(c => `<option value="${esc(c)}">`).join('');
-  const reg = new Set(Object.keys(VIV_HINTS).map(k => k[0].toUpperCase() + k.slice(1)));
-  S.friends.forEach(f => f.region && reg.add(f.region));
   const pls = new Set(Object.values(S.places || {}).map(x => x.name));
   S.pokemon.forEach(p => { if (p.location) pls.add(p.location.trim()); if (p.myLocation) pls.add(p.myLocation.trim()); });
   document.getElementById('dlPlaces').innerHTML = [...pls].filter(Boolean).sort((a, b) => a.localeCompare(b, 'de')).map(c => `<option value="${esc(c)}">`).join('');
-  document.getElementById('dlRegion').innerHTML = [...reg].sort().map(c => `<option value="${esc(c)}">`).join('');
+  const dc = document.getElementById('dlCountry');
+  if (dc && !dc.childElementCount) dc.innerHTML = countryList().map(x => `<option value="${esc(flagOf(x.c) + ' ' + x.name)}">`).join('');
 }
 const ivPct = p => (p.ivA == null || p.ivD == null || p.ivH == null) ? null : Math.round((p.ivA + p.ivD + p.ivH) / 45 * 100);
 function ivStars(p){
@@ -845,7 +881,7 @@ function editMon(p){
 function renderFriends(){
   let list = S.friends.slice();
   const q = FF.q.trim().toLowerCase();
-  if (q) list = list.filter(f => [f.name, f.code, f.notes, f.region, f.viv && VIVMAP[f.viv] ? VIVMAP[f.viv][1] : ''].join(' ').toLowerCase().includes(q));
+  if (q) list = list.filter(f => [f.name, f.code, f.notes, f.region, countryName(f.country), f.viv && VIVMAP[f.viv] ? VIVMAP[f.viv][1] : ''].join(' ').toLowerCase().includes(q));
   const fl = FF.flt;
   if (fl === 'due') list = list.filter(f => activity(f).due);
   if (fl === 'inactive') list = list.filter(f => activity(f).cls === 'no');
@@ -853,6 +889,8 @@ function renderFriends(){
   if (fl === 'ignores') list = list.filter(f => activity(f).ignores);
   if (fl === 'frstall') list = list.filter(f => { const r = activity(f).fr; return r && (r.cls === 'lo' || r.cls === 'no'); });
   if (fl === 'lucky') list = list.filter(f => f.lucky);
+  if (fl === 'nocountry') list = list.filter(f => !f.country);
+  if (fl === 'vivmismatch') list = list.filter(vivMismatch);
   if (/^L\d$/.test(fl)) list = list.filter(f => (f.level || 0) === +fl[1]);
   const A = new Map(list.map(f => [f.id, activity(f)]));
   const so = {
@@ -860,6 +898,7 @@ function renderFriends(){
     next: (a, b) => (friendProgress(a).left ?? 999) - (friendProgress(b).left ?? 999),
     check: (a, b) => (A.get(a.id).nextCheck || '').localeCompare(A.get(b.id).nextCheck || ''),
     stale: (a, b) => (A.get(b.id).stale ?? -1) - (A.get(a.id).stale ?? -1),
+    origin: (a, b) => (!a.country) - (!b.country) || countryName(a.country).localeCompare(countryName(b.country), 'de') || (a.region || '').localeCompare(b.region || '', 'de'),
     name: (a, b) => a.name.localeCompare(b.name, 'de')
   }[FF.sort] || ((a, b) => a.name.localeCompare(b.name, 'de'));
   list.sort((a, b) => so(a, b) || a.name.localeCompare(b.name, 'de'));
@@ -877,8 +916,8 @@ function renderFriends(){
     <div class="bar">
       <button class="b p" id="addF">+ Freund</button>
       <input id="fq" placeholder="Suchen (Name, Region, Code…)" value="${esc(FF.q)}" style="flex:1;min-width:160px">
-      <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['ignores', 'Spielt, interagiert nicht'], ['frstall', 'Freundschaft stockt'], ['lucky', 'Glücksfreunde'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
-      <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Nächste Prüfung zuerst'], ['stale', 'Am längsten ohne Änderung'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['ignores', 'Spielt, interagiert nicht'], ['frstall', 'Freundschaft stockt'], ['lucky', 'Glücksfreunde'], ['nocountry', 'Land fehlt'], ['vivmismatch', 'Muster passt nicht zum Land'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Nächste Prüfung zuerst'], ['stale', 'Am längsten ohne Änderung'], ['origin', 'Herkunft'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map(f => friendCard(f, A.get(f.id))).join('')}</div>
       ${list.length > FF.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="moreF">Weitere ${Math.min(60, list.length - FF.lim)} anzeigen (${list.length - FF.lim} übrig)</button> <button class="b" id="allF">Alle anzeigen</button></div>` : ''}`
@@ -908,7 +947,7 @@ function friendCard(f, ac){
   const short = d => d ? new Date(d + 'T12:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '–';
   return `<div class="card fr">
     <div class="row"><h3 class="sp">${esc(f.name)} ${f.lucky ? '<span class="bd lu">Glücksfreund</span>' : ''}</h3><button class="b s" data-act="edit" data-id="${f.id}" title="Bearbeiten">✎</button></div>
-    <div class="muted" style="font-size:13px">${[esc(f.region || 'Herkunft unbekannt'), trainer, f.code ? esc(f.code) : ''].filter(Boolean).join(' · ')}</div>
+    <div class="muted" style="font-size:13px">${[esc(originTxt(f) || 'Herkunft unbekannt'), trainer, f.code ? esc(f.code) : ''].filter(Boolean).join(' · ')}</div>
     <div class="row" style="margin-top:8px"><span class="hearts" style="color:#e2557a">${hearts}</span><b class="sp">${FL[lvl]}</b></div>
     <div class="prog"><i style="width:${pr.pct}%"></i></div>
     <div class="note">${pr.next ? `Noch <b>${pr.left}</b> ${pr.unit} bis <b>${pr.next}</b>${eta ? ` · ${eta}` : ''}` : `Höchstes Level erreicht 🎉${f.left != null ? ` · Zähler laut Spiel: ${f.left}` : ''}`}</div>
@@ -917,7 +956,7 @@ function friendCard(f, ac){
     </div>
     ${ac.detail ? `<div class="note" style="margin-top:4px">${ac.detail}</div>` : ''}
     <div class="note" style="margin-top:4px">Geprüft ${short(f.lastCheck)}${ac.checkAge != null ? ` (vor ${ac.checkAge} T)` : ''}${ac.nextCheck ? ` · nächste Prüfung ${short(ac.nextCheck)}` : ''} · EP geändert ${short(f.xpChanged)} · Freundschaft geändert ${short(f.friendChanged)}</div>
-    ${f.viv && VIVMAP[f.viv] ? `<div class="note" style="margin-top:4px">Vivillon: ${vivDot(f.viv)}${esc(VIVMAP[f.viv][1])}</div>` : ''}
+    ${f.viv && VIVMAP[f.viv] ? `<div class="note" style="margin-top:4px">Vivillon: ${vivDot(f.viv)}${esc(VIVMAP[f.viv][1])}${vivMismatch(f) ? ` <span class="st lo" title="Laut Tabelle gibt es dieses Muster in ${esc(countryName(f.country))} nicht">passt nicht zum Land</span>` : ''}</div>` : ''}
     <div class="row" style="margin-top:10px">
       <button class="b s ${ac.due ? 'p' : ''}" data-act="check" data-id="${f.id}">Prüfen</button>
     </div>
@@ -931,11 +970,12 @@ function editFriend(f){
     <div class="fg">
       <label>Name / Trainername<input name="name" value="${esc(f.name)}" required></label>
       <label>Freundescode<input name="code" value="${esc(f.code)}" placeholder="1234 5678 9012"></label>
-      <label>Herkunft (Land/Region)<input name="region" list="dlRegion" value="${esc(f.region)}"></label>
+      <label>Land<input name="country" list="dlCountry" autocomplete="off" placeholder="Name tippen, z. B. Japan" value="${f.country ? esc(flagOf(f.country) + ' ' + countryName(f.country)) : ''}"></label>
+      <label>Region / Ort<input name="region" list="dlRegion" autocomplete="off" placeholder="z. B. Bayern, Kalifornien" value="${esc(f.region)}"></label>
       <label>Vivillon-Muster seiner Postkarten<select name="viv">${vivOptions(f.viv)}</select></label>
       <label>Freunde seit<input name="since" type="date" value="${f.since || ''}"></label>
     </div>
-    <p class="note" id="vivHint" style="margin-top:0"></p>
+    <p class="note" id="vivHint" style="margin-top:0"></p>${f.originOld ? `<p class="note" style="margin-top:0">Ursprünglicher Eintrag: ${esc(f.originOld)}</p>` : ''}
     <div class="sec">Freundschaft</div>
     <div class="fg">
       <label>Freundeslevel<select name="level">${FL.map((l, i) => `<option value="${i}" ${(f.level || 0) === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -953,20 +993,31 @@ function editFriend(f){
       if (go !== undefined && !changed) return navOpen('friends', go);
       if (act === 'del'){ if (confirm(`${f.name} löschen?`)){ S.friends = S.friends.filter(x => x.id !== f.id); save(); render(); } return; }
       const lvl = +fd.get('level'), left = num(fd.get('left'));
-      Object.assign(f, { name: fd.get('name').trim(), code: fd.get('code').trim(), region: fd.get('region').trim(), viv: fd.get('viv'), since: fd.get('since'), lucky: !!fd.get('lucky'), notes: fd.get('notes') });
+      Object.assign(f, { name: fd.get('name').trim(), code: fd.get('code').trim(), country: parseOrigin(fd.get('country')).country, region: fd.get('region').trim(), viv: fd.get('viv'), since: fd.get('since'), lucky: !!fd.get('lucky'), notes: fd.get('notes') });
       if (lvl !== (f.level || 0) || left !== (f.left ?? null)){
         f.level = lvl; f.left = left ?? spanOf(lvl); f.leftDate = today();
       }
       if (isNew) S.friends.push(f); save(); render();
       if (go !== undefined) navOpen('friends', go);
     });
-  { const fm = dlgForm, hint = document.getElementById('vivHint');
-    const upd = () => {
-      const sg = vivSuggest(fm.region.value);
-      hint.innerHTML = !sg.length ? '' : 'Mögliche Muster für diese Herkunft: ' + sg.map(k => `<button type="button" class="b s" data-v="${k}">${vivDot(k)}${VIVMAP[k][1]}</button>`).join(' ');
-      hint.querySelectorAll('[data-v]').forEach(b => b.onclick = () => fm.viv.value = b.dataset.v);
+  { const fm = dlgForm, hint = document.getElementById('vivHint'), ci = fm.country;
+    const upd = first => {
+      const raw = ci.value.trim(), c = parseOrigin(raw).country;
+      ci.setCustomValidity(raw && !c ? 'Land nicht erkannt – bitte aus der Liste wählen' : '');
+      const regs = new Set(S.friends.filter(x => x.country === c && x.region).map(x => x.region));
+      if (c === 'US') Object.values(US_STATES).forEach(n => regs.add(n));
+      if (c === 'DE') DE_STATES.forEach(n => regs.add(n));
+      document.getElementById('dlRegion').innerHTML = [...regs].sort((a, b) => a.localeCompare(b, 'de')).map(n => `<option value="${esc(n)}">`).join('');
+      const sg = vivOfCountry(c);
+      if (!first && sg.length === 1 && !fm.viv.value) fm.viv.value = sg[0];
+      const mis = fm.viv.value && c && sg.length && !sg.includes(fm.viv.value);
+      hint.innerHTML = !c ? '' : !sg.length ? `Für ${esc(countryName(c))} sind keine Muster hinterlegt.`
+        : `Muster in ${esc(countryName(c))}: ` + sg.map(k => `<button type="button" class="b s" data-v="${k}">${vivDot(k)}${VIVMAP[k][1]}</button>`).join(' ')
+          + (sg.length > 1 ? ' <span class="muted">– welches, hängt von der Gegend ab.</span>' : '')
+          + (mis ? `<br>⚠️ ${esc(VIVMAP[fm.viv.value][1])} gibt es laut Tabelle in ${esc(countryName(c))} nicht – Postkarte aus dem Urlaub?` : '');
+      hint.querySelectorAll('[data-v]').forEach(b => b.onclick = () => { fm.viv.value = b.dataset.v; upd(); });
     };
-    fm.region.addEventListener('input', upd); upd(); }
+    ci.addEventListener('input', () => upd()); ci.addEventListener('change', () => upd()); fm.viv.addEventListener('change', () => upd()); upd(true); }
   dlgB.querySelectorAll('[data-snap]').forEach(b => b.onclick = () => { f.snaps = f.snaps.filter(s => s.date !== b.dataset.snap); save(); b.closest('tr').remove(); render(); });
 }
 // Abgleich mit dem Spiel: Werte eintragen, Änderungsdaten werden automatisch fortgeschrieben
@@ -1573,7 +1624,7 @@ function importFriends(list){
       lastCheck: r.lastCheck || f.lastCheck || '', xpChanged: r.xpChanged || f.xpChanged || '', friendChanged: r.friendChanged || f.friendChanged || '',
       lucky: !!r.lucky
     });
-    if (r.region) f.region = r.region;
+    if (r.region){ const o = parseOrigin(r.region); f.country = o.country; f.region = o.region; }
     if (r.xpPrev != null || r.leftPrev != null) f.importPrev = { xp: r.xpPrev, left: r.leftPrev };
     // EP werden über die letzten 4 Ziffern verglichen – ältere volle Werte bleiben zur Info erhalten
     f.chk = { date: f.lastCheck, lvl: f.trainerLvl, xp: f.xp, level: f.level, left: r.left ?? null };
