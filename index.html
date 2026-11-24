@@ -995,6 +995,7 @@ function renderFriends(){
     if (a === 'edit') return editFriend(f);
     if (a === 'check') return checkFriend(f);
     if (a === 'vivplus') return vivPlus(f.viv);
+    if (a === 'vivother') return vivOther(f);
   });
 }
 // Kurze Rückmeldung unten mit optionalem „Rückgängig“
@@ -1005,6 +1006,37 @@ function toast(html, undo){
   t.innerHTML = `<span>${html}</span>${undo ? '<button class="b s" type="button">Rückgängig</button>' : ''}`;
   if (undo) t.querySelector('button').onclick = () => { t.remove(); undo(); };
   document.body.appendChild(t); TOAST_T = setTimeout(() => t.remove(), 6000);
+}
+// Postkarte von einem anderen Ort zählen: Ort suchen → Muster laut Musterkarte → Zähler +1
+function vivOther(f){
+  openDlg('Postkarte von woanders', `
+    <p class="note" style="margin-top:0">${f ? `Von <b>${esc(f.name)}</b>, aber nicht aus der Herkunft. ` : ''}Gib den Ort von der Postkarte ein (z. B. „Paris“ oder „Okinawa, Japan“). Das Muster kommt aus der Musterkarte.</p>
+    <div class="row" style="flex-wrap:nowrap"><input name="q" placeholder="Ort der Postkarte" autocomplete="off" style="flex:1;min-width:0"><button type="button" class="b" id="voSearch">Suchen</button></div>
+    <div id="voRes" style="margin-top:8px"></div>
+    <label style="margin-top:8px;display:block">Muster<select name="viv" required><option value="">– wählen –</option>${VIV.slice(0, 18).map(v => `<option value="${v[0]}">${v[1]}</option>`).join('')}</select></label>
+    <p class="note" id="voInfo"></p>`, '', (fd, act) => { if (act === 'ok' && fd.get('viv')) vivPlus(fd.get('viv')); });
+  dlgF.querySelector('button[value=ok]').textContent = '+1 zählen';
+  const fm = dlgForm, res = document.getElementById('voRes'), info = document.getElementById('voInfo');
+  const showInfo = () => { const k = fm.viv.value, c = (S.vivCards || {})[k]; info.innerHTML = k ? `${vivDot(k)}${VIVMAP[k][1]}: jetzt ${c?.p ?? 0} / ${c?.goal ?? 3}` : ''; };
+  fm.viv.onchange = showInfo;
+  const pick = x => {
+    const k = vivAt(x.lat, x.lng);
+    res.innerHTML = `<p class="note" style="margin:0">📍 ${esc(x.label)}<br>${k ? `→ Musterkarte: <b>${vivDot(k)}${VIVMAP[k][1]}</b> <span class="muted">(an Grenzen unsicher)</span>` : '→ liegt in keiner Musterfläche – bitte Muster selbst wählen.'}</p>`;
+    if (k) fm.viv.value = k; showInfo();
+  };
+  const search = async () => {
+    const q = fm.q.value.trim(); if (!q) return;
+    res.innerHTML = `<p class="note" style="margin:0">Suche „${esc(q)}“ …</p>`;
+    try{
+      const r = await geoSearch(q);
+      if (!r.length){ res.innerHTML = '<p class="note" style="margin:0">Nichts gefunden – versuch es mit Ort und Land.</p>'; return; }
+      if (r.length === 1) return pick(r[0]);
+      res.innerHTML = r.map((x, i) => `<button type="button" class="b s" style="display:block;width:100%;text-align:left;margin:3px 0" data-vo="${i}">📍 ${esc(x.label)}${vivAt(x.lat, x.lng) ? ` → ${VIVMAP[vivAt(x.lat, x.lng)][1]}` : ''}</button>`).join('');
+      res.querySelectorAll('[data-vo]').forEach(b => b.onclick = () => pick(r[+b.dataset.vo]));
+    }catch(e){ res.innerHTML = `<p class="note" style="margin:0">${esc(e.message)} – Muster bitte selbst wählen.</p>`; }
+  };
+  document.getElementById('voSearch').onclick = search;
+  fm.q.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); search(); } });
 }
 // Postkarte eines Musters mitzählen (Stand wie in der Medaille). Bei Erreichen des Ziels gibt es die Purmel-Begegnung,
 // der Zähler beginnt beim nächsten Ziel neu (3 → 9 → 15 → 15 …).
@@ -1043,6 +1075,7 @@ function friendCard(f, ac, rs){
     <div class="row" style="margin-top:10px">
       <button class="b s ${ac.due ? 'p' : ''}" data-act="check" data-id="${f.id}">Prüfen</button>
       ${f.viv && VIVMAP[f.viv] && VIV.indexOf(VIVMAP[f.viv]) < 18 ? `<button class="b s" data-act="vivplus" data-id="${f.id}" title="Postkarte mit ${esc(VIVMAP[f.viv][1])} angepinnt – Zähler im Vivillon-Tab +1">${vivDot(f.viv)}+1 Postkarte</button>` : ''}
+      <button class="b s" data-act="vivother" data-id="${f.id}" title="Postkarte von einem anderen Ort – Muster über Ortssuche">+1 andere…</button>
     </div>
   </div>`;
 }
@@ -1238,6 +1271,7 @@ function renderViv(){
       <div class="card"><b>${pats.filter(v => soon(v[0])).length}</b><span class="muted">nur noch 1 Karte bis Purmel</span></div>
     </div>
     ${(() => { const n = S.pokemon.filter(p => VIV_LINE.includes(p.dex) && !p.viv).length; return n ? `<p class="note">⚠️ ${n} Purmel/Puponcho/Vivillon ohne Muster – sie zählen bei den besten IV nicht mit. Poke Genie exportiert das Muster nicht. <a href="#" id="vivNone">Anzeigen und Muster eintragen</a></p>` : ''; })()}
+    <div class="row" style="margin-bottom:10px"><button class="b s" id="vivOtherBtn">+1 Postkarte von Ort…</button><span class="note">Muster über Ortssuche bestimmen und mitzählen.</span></div>
     ${vivGeoBox()}
     <p class="note">Trag pro Muster den Stand aus der Vivillon-Medaille ein, z. B. 4 / 15. Die erste Purmel-Begegnung gibt es nach 3 Karten, die zweite nach 9 weiteren, danach alle 15. Besitz und beste IV kommen aus deinen Pokémon (Purmel/Puponcho/Vivillon mit Muster), die Freunde aus dem Muster beim Freund.</p>
     <div class="viv">${pats.map(v => {
@@ -1254,6 +1288,7 @@ function renderViv(){
         ${friends.length ? `<div class="note" style="margin-top:4px">Freunde: ${friends.map(esc).join(', ')}</div>` : ''}
       </div>`;
     }).join('')}</div>`;
+  document.getElementById('vivOtherBtn').onclick = () => vivOther(null);
   const vg = document.getElementById('vivGeoAll'); if (vg) vg.onclick = () => vivGeoAll(vg);
   const vm = document.getElementById('vivMis'); if (vm) vm.onclick = e => { e.preventDefault(); FF.flt = 'vivmismatch'; FF.q = ''; document.querySelector('#tabs [data-t=friends]').click(); };
   main.querySelectorAll('[data-vmon]').forEach(a => a.onclick = e => { e.preventDefault(); editMon(S.pokemon.find(p => p.id === a.dataset.vmon)); });
