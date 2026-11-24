@@ -945,6 +945,8 @@ function renderFriends(){
   if (fl === 'nocountry') list = list.filter(f => !f.country);
   if (fl === 'vivmismatch') list = list.filter(vivMismatch);
   if (fl === 'irl') list = list.filter(f => f.irl);
+  const GS = new Map(); const gsOf = f => { if (!GS.has(f.id)) GS.set(f.id, giftScore(f)); return GS.get(f.id); };
+  if (fl === 'gifts') list = list.filter(f => f.giftWaiting);
   const RS = new Map();
   const rsOf = f => { if (!RS.has(f.id)) RS.set(f.id, removeScore(f)); return RS.get(f.id); };
   if (fl === 'remove') list = list.filter(f => (rsOf(f).score ?? -1e9) >= REMOVE_MIN);
@@ -957,8 +959,9 @@ function renderFriends(){
     stale: (a, b) => (A.get(b.id).stale ?? -1) - (A.get(a.id).stale ?? -1),
     origin: (a, b) => (!a.country) - (!b.country) || countryName(a.country).localeCompare(countryName(b.country), 'de') || (a.region || '').localeCompare(b.region || '', 'de'),
     remove: (a, b) => (rsOf(b).score ?? -1e9) - (rsOf(a).score ?? -1e9),
+    gifts: (a, b) => gsOf(b).score - gsOf(a).score,
     name: (a, b) => a.name.localeCompare(b.name, 'de')
-  }[fl === 'remove' ? 'remove' : FF.sort] || ((a, b) => a.name.localeCompare(b.name, 'de'));
+  }[fl === 'remove' || fl === 'gifts' ? fl : FF.sort] || ((a, b) => a.name.localeCompare(b.name, 'de'));
   list.sort((a, b) => so(a, b) || a.name.localeCompare(b.name, 'de'));
   NAV.friends = list.map(f => f.id);
   const t = today(), all = S.friends;
@@ -975,14 +978,17 @@ function renderFriends(){
     <div class="bar">
       <button class="b p" id="addF">+ Freund</button>
       <input id="fq" placeholder="Suchen (Name, Region, Code…)" value="${esc(FF.q)}" style="flex:1;min-width:160px">
-      <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['remove', 'Eher entfernen (Vorschlag)'], ['ignores', 'Spielt, interagiert nicht'], ['frstall', 'Freundschaft stockt'], ['lucky', 'Glücksfreunde'], ['irl', 'Reallife-Freunde'], ['nocountry', 'Land fehlt'], ['vivmismatch', 'Muster passt nicht zum Land'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="ff">${[['', 'Alle'], ['gifts', '🎁 Geschenke öffnen (Reihenfolge)'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['remove', 'Eher entfernen (Vorschlag)'], ['ignores', 'Spielt, interagiert nicht'], ['frstall', 'Freundschaft stockt'], ['lucky', 'Glücksfreunde'], ['irl', 'Reallife-Freunde'], ['nocountry', 'Land fehlt'], ['vivmismatch', 'Muster passt nicht zum Land'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Nächste Prüfung zuerst'], ['stale', 'Am längsten ohne Änderung'], ['origin', 'Herkunft'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
+    ${fl === 'gifts' ? (() => { const n = giftsToday(), lim = giftLimit(), w = S.friends.filter(f => f.giftWaiting).length; return `<div class="card" style="margin-bottom:10px"><div class="row"><b class="sp">🎁 Heute geöffnet: ${n} / ${lim}${n >= lim ? ' – Limit erreicht' : ` · noch ${lim - n}`}</b><label class="note" style="display:flex;gap:6px;align-items:center">Limit pro Tag <input type="number" id="giftLim" min="1" max="100" value="${lim}" style="width:64px"></label></div>
+      <p class="note" style="margin:6px 0 0">${w} Geschenk${w === 1 ? '' : 'e'} vorgemerkt. Öffne von oben nach unten: zuerst Freunde, bei denen die Freundschaft steigt und von denen du am längsten nichts geöffnet hast. Vormerken: auf der Kachel „🎁 Geschenk da“ (Filter „Alle“ + Suche).</p></div>`; })() : ''}
     ${fl === 'remove' ? `<p class="note">Vorschlag, sortiert nach Punkten (ab ${REMOVE_MIN}). Punkte gibt es für fehlende Aktivität und niedriges Freundeslevel, Abzüge für hohes Level, Glücksfreund und seltene Vivillon-Muster. Nicht bewertet: Reallife-Freunde (${cnt(f => f.irl)}) und Freunde, die seit über ${REMOVE_FRESH} Tagen nicht geprüft wurden (${cnt(f => !f.irl && (!f.lastCheck || daysBetween(f.lastCheck, today()) > REMOVE_FRESH))}).</p>` : ''}
-    ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map(f => friendCard(f, A.get(f.id), fl === 'remove' ? rsOf(f) : null)).join('')}</div>
+    ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map((f, i) => friendCard(f, A.get(f.id), fl === 'remove' ? rsOf(f) : null, fl === 'gifts' ? { rank: i + 1, ...gsOf(f) } : null)).join('')}</div>
       ${list.length > FF.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="moreF">Weitere ${Math.min(60, list.length - FF.lim)} anzeigen (${list.length - FF.lim} übrig)</button> <button class="b" id="allF">Alle anzeigen</button></div>` : ''}`
       : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Freunde eingetragen – trag welche ein oder übernimm sie unter „Daten“.'}</div>`}`;
   addF.onclick = () => editFriend();
+  const gl = document.getElementById('giftLim'); if (gl) gl.onchange = () => { const v = Math.max(1, Math.min(100, Math.round(+gl.value) || 20)); try{ localStorage.setItem(GIFT_LIMIT_KEY, String(v)); }catch(e){} renderFriends(); };
   const mf = document.getElementById('moreF'); if (mf) mf.onclick = () => { FF.lim += 60; renderFriends(); };
   const af = document.getElementById('allF'); if (af) af.onclick = () => { FF.lim = 1e6; renderFriends(); };
   fq.oninput = e => { FF.q = e.target.value; FF.lim = 60; renderFriends(); const n = document.getElementById('fq'); n.focus(); n.setSelectionRange(n.value.length, n.value.length); };
@@ -996,7 +1002,40 @@ function renderFriends(){
     if (a === 'check') return checkFriend(f);
     if (a === 'vivplus') return vivPlus(f.viv);
     if (a === 'vivother') return vivOther(f);
+    if (a === 'giftmark') return giftMark(f, true);
+    if (a === 'giftunmark') return giftMark(f, false);
+    if (a === 'giftopen') return giftOpen(f);
   });
+}
+/* ---------- Geschenke öffnen: begrenzte Öffnungen pro Tag reihum verteilen ---------- */
+// f.giftWaiting = Geschenk liegt bereit (selbst markiert), f.giftOpened = Datum der letzten Öffnung. Limit pro Tag nur lokal (UI-Einstellung).
+const GIFT_LIMIT_KEY = 'go-organizer-giftlimit';
+const giftLimit = () => { try{ return +localStorage.getItem(GIFT_LIMIT_KEY) || 20; }catch(e){ return 20; } };
+const giftsToday = () => S.friends.filter(f => f.giftOpened === today()).length;
+function giftScore(f){
+  let sc = 0; const why = [];
+  const add = (n, t) => { sc += n; why.push(t); };
+  const lv = f.level || 0, pr = friendProgress(f);
+  if (lv < MAXLVL){ add(30, 'Freundschaft steigt'); if (pr.left != null && pr.left <= 3) add(15, `nur noch ${pr.left} ${pr.unit} bis ${pr.next}`); else if (pr.left != null && pr.left <= 7) add(8, `noch ${pr.left} ${pr.unit} bis ${pr.next}`); }
+  else why.push('Allerbester Freund – kein Level mehr');
+  const d = f.giftOpened ? daysBetween(f.giftOpened, today()) : null;
+  add(Math.min(d ?? 30, 30), d == null ? 'noch nie geöffnet' : d === 0 ? 'heute schon geöffnet' : `zuletzt vor ${d} T geöffnet`);
+  if (f.irl) add(10, 'Reallife-Freund');
+  if (f.viv && VIVMAP[f.viv] && !S.pokemon.some(p => p.dex === 666 && p.viv === f.viv)) add(5, `Postkarte mit ${VIVMAP[f.viv][1]} (fehlt dir)`);
+  const rs = removeScore(f); if ((rs.score ?? -1e9) >= REMOVE_MIN) add(-25, 'Kandidat zum Entfernen');
+  return { score: sc, why };
+}
+function giftMark(f, on){
+  const before = { w: f.giftWaiting, o: f.giftOpened };
+  f.giftWaiting = on; save(); renderFriends();
+  toast(on ? `🎁 Geschenk von <b>${esc(f.name)}</b> vorgemerkt · ${S.friends.filter(x => x.giftWaiting).length} bereit` : `Vormerkung bei <b>${esc(f.name)}</b> entfernt`, () => { f.giftWaiting = before.w; save(); renderFriends(); });
+}
+function giftOpen(f){
+  const before = { w: f.giftWaiting, o: f.giftOpened };
+  if (f.giftOpened === today()) return toast(`Von <b>${esc(f.name)}</b> heute schon geöffnet.`);
+  f.giftWaiting = false; f.giftOpened = today(); save(); renderFriends();
+  const n = giftsToday(), lim = giftLimit();
+  toast(`🎁 <b>${esc(f.name)}</b> geöffnet · heute ${n} / ${lim}${n >= lim ? ' – Limit erreicht' : ` · noch ${lim - n}`}`, () => { f.giftWaiting = before.w; f.giftOpened = before.o; save(); renderFriends(); });
 }
 // Kurze Rückmeldung unten mit optionalem „Rückgängig“
 let TOAST_T = 0;
@@ -1050,7 +1089,7 @@ function vivPlus(k){
   save(); if (TAB === 'viv') renderViv();
   toast(msg, () => { if (before) VC[k] = before; else delete VC[k]; save(); if (TAB === 'viv') renderViv(); toast(`${vivDot(k)}<b>${VIVMAP[k][1]}</b>: wieder ${before?.p ?? 0} / ${before?.goal ?? 3}`); });
 }
-function friendCard(f, ac, rs){
+function friendCard(f, ac, rs, gs){
   ac = ac || activity(f);
   const pr = friendProgress(f), t = today(), lvl = f.level || 0;
   const hearts = '♥'.repeat(lvl) + '♡'.repeat(MAXLVL - lvl);
@@ -1070,11 +1109,14 @@ function friendCard(f, ac, rs){
     </div>
     ${ac.detail ? `<div class="note" style="margin-top:4px">${ac.detail}</div>` : ''}
     <div class="note" style="margin-top:4px">Geprüft ${short(f.lastCheck)}${ac.checkAge != null ? ` (vor ${ac.checkAge} T)` : ''}${ac.nextCheck ? ` · nächste Prüfung ${short(ac.nextCheck)}` : ''} · EP geändert ${short(f.xpChanged)} · Freundschaft geändert ${short(f.friendChanged)}</div>
+    ${gs ? `<div class="note" style="margin-top:6px;padding:6px 8px;border-radius:8px;background:var(--line)"><b>#${gs.rank}</b> · ${gs.why.map(esc).join(' · ')}</div>` : ''}
     ${rs && rs.score != null ? `<div class="note" style="margin-top:6px;padding:6px 8px;border-radius:8px;background:var(--line)"><b>${rs.score} Punkte</b> · ${rs.why.map(esc).join(' · ')}</div>` : ''}
     ${f.viv && VIVMAP[f.viv] ? `<div class="note" style="margin-top:4px">Vivillon: ${vivDot(f.viv)}${esc(VIVMAP[f.viv][1])}${vivMismatch(f) ? ` <span class="st lo" title="${vivOfMap(f) ? 'Laut Karte: ' + esc(VIVMAP[vivOfMap(f)]?.[1]) : 'Laut Tabelle gibt es dieses Muster in ' + esc(countryName(f.country)) + ' nicht'}">passt nicht${vivOfMap(f) ? ' – Karte: ' + esc(VIVMAP[vivOfMap(f)]?.[1]) : ' zum Land'}</span>` : ''}</div>` : ''}
     <div class="row" style="margin-top:10px">
       <button class="b s ${ac.due ? 'p' : ''}" data-act="check" data-id="${f.id}">Prüfen</button>
       ${f.viv && VIVMAP[f.viv] && VIV.indexOf(VIVMAP[f.viv]) < 18 ? `<button class="b s" data-act="vivplus" data-id="${f.id}" title="Postkarte mit ${esc(VIVMAP[f.viv][1])} angepinnt – Zähler im Vivillon-Tab +1">${vivDot(f.viv)}+1 Postkarte</button>` : ''}
+      ${f.giftWaiting ? `<button class="b s p" data-act="giftopen" data-id="${f.id}" title="Geschenk im Spiel geöffnet">🎁 Geöffnet</button><button class="b s" data-act="giftunmark" data-id="${f.id}" title="Vormerkung entfernen">✕</button>`
+        : `<button class="b s" data-act="giftmark" data-id="${f.id}" title="Von diesem Freund liegt ein Geschenk bereit"${f.giftOpened === today() ? ' disabled' : ''}>🎁 ${f.giftOpened === today() ? 'heute geöffnet' : 'Geschenk da'}</button>`}
       <button class="b s" data-act="vivother" data-id="${f.id}" title="Postkarte von einem anderen Ort – Muster über Ortssuche">+1 andere…</button>
     </div>
   </div>`;
