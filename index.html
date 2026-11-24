@@ -536,6 +536,31 @@ function friendProgress(f){
   const left = Math.max(0, Math.min(span, f.left ?? span));
   return { pct: (span - left) / span * 100, left, next: FL[lvl + 1], unit: unitOf(lvl, left) };
 }
+// Kandidaten zum Entfernen: Punkte aus Aktivität, Freundeslevel, Glücksfreund und Muster-Einzigartigkeit.
+// Reallife-Freunde (irl) nie; Freunde ohne Prüfung in den letzten REMOVE_FRESH Tagen werden nicht bewertet.
+const REMOVE_FRESH = 60, REMOVE_MIN = 40;
+function removeScore(f, ac){
+  if (f.irl) return { score: null, why: ['Reallife-Freund'] };
+  ac = ac || activity(f);
+  if (!f.lastCheck || daysBetween(f.lastCheck, today()) > REMOVE_FRESH) return { score: null, why: ['erst prüfen'] };
+  if (ac.key === 'na') return { score: null, why: ['nicht bewertbar'] };
+  let sc = 0; const why = [];
+  const add = (n, t) => { sc += n; why.push((n > 0 ? '+' : '') + n + ' ' + t); };
+  if (ac.play){ if (ac.play.cls === 'no') add(40, `spielt nicht (${ac.play.stale} T ohne EP)`); else if (ac.play.cls === 'lo') add(15, 'spielt wenig'); }
+  if (ac.fr){ if (ac.fr.cls === 'no') add(25, `Freundschaft stockt (${ac.fr.stale} T)`); else if (ac.fr.cls === 'lo') add(15, 'Freundschaft stockt'); }
+  if (ac.ignores) add(10, 'spielt, interagiert aber nicht');
+  const lv = f.level || 0;
+  const lvPts = [20, 15, 10, 5, 0, -15][lv]; if (lvPts) add(lvPts, lvPts > 0 ? `nur ${FL[lv]}` : `${FL[lv]} – Level ginge verloren`);
+  if (lv === 4 && !ac.ignores && ac.fr && ac.fr.cls === 'ok') add(-10, 'arbeitet an Allerbester Freund');
+  if (f.lucky) add(-30, 'Glücksfreund – Glückstausch offen');
+  if (f.viv){
+    const others = S.friends.filter(x => x.id !== f.id && x.viv === f.viv).length;
+    const owned = S.pokemon.some(p => p.dex === 666 && p.viv === f.viv);
+    if (!others) add(owned ? -15 : -30, `einziger Freund mit ${VIVMAP[f.viv]?.[1]}${owned ? '' : ' (fehlt dir noch)'}`);
+    else if (others === 1) add(-5, `nur 2 Freunde mit ${VIVMAP[f.viv]?.[1]}`);
+  }
+  return { score: sc, why };
+}
 // Prüfstatus: wie lange hatte sich zum Zeitpunkt der letzten Prüfung nichts mehr geändert?
 function activity(f){
   const c = f.lastCheck;
@@ -891,6 +916,10 @@ function renderFriends(){
   if (fl === 'lucky') list = list.filter(f => f.lucky);
   if (fl === 'nocountry') list = list.filter(f => !f.country);
   if (fl === 'vivmismatch') list = list.filter(vivMismatch);
+  if (fl === 'irl') list = list.filter(f => f.irl);
+  const RS = new Map();
+  const rsOf = f => { if (!RS.has(f.id)) RS.set(f.id, removeScore(f)); return RS.get(f.id); };
+  if (fl === 'remove') list = list.filter(f => (rsOf(f).score ?? -1e9) >= REMOVE_MIN);
   if (/^L\d$/.test(fl)) list = list.filter(f => (f.level || 0) === +fl[1]);
   const A = new Map(list.map(f => [f.id, activity(f)]));
   const so = {
@@ -899,8 +928,9 @@ function renderFriends(){
     check: (a, b) => (A.get(a.id).nextCheck || '').localeCompare(A.get(b.id).nextCheck || ''),
     stale: (a, b) => (A.get(b.id).stale ?? -1) - (A.get(a.id).stale ?? -1),
     origin: (a, b) => (!a.country) - (!b.country) || countryName(a.country).localeCompare(countryName(b.country), 'de') || (a.region || '').localeCompare(b.region || '', 'de'),
+    remove: (a, b) => (rsOf(b).score ?? -1e9) - (rsOf(a).score ?? -1e9),
     name: (a, b) => a.name.localeCompare(b.name, 'de')
-  }[FF.sort] || ((a, b) => a.name.localeCompare(b.name, 'de'));
+  }[fl === 'remove' ? 'remove' : FF.sort] || ((a, b) => a.name.localeCompare(b.name, 'de'));
   list.sort((a, b) => so(a, b) || a.name.localeCompare(b.name, 'de'));
   NAV.friends = list.map(f => f.id);
   const t = today(), all = S.friends;
@@ -912,14 +942,16 @@ function renderFriends(){
       <div class="card"><b>${cnt(f => activity(f).due)}</b><span class="muted">Prüfung fällig</span></div>
       <div class="card"><b>${cnt(f => activity(f).cls === 'no')}</b><span class="muted">inaktiv?</span></div>
       <div class="card"><b>${cnt(f => activity(f).ignores)}</b><span class="muted">spielt, interagiert nicht</span></div>
+      <div class="card"><b>${cnt(f => (rsOf(f).score ?? -1e9) >= REMOVE_MIN)}</b><span class="muted">eher entfernen</span></div>
     </div>
     <div class="bar">
       <button class="b p" id="addF">+ Freund</button>
       <input id="fq" placeholder="Suchen (Name, Region, Code…)" value="${esc(FF.q)}" style="flex:1;min-width:160px">
-      <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['ignores', 'Spielt, interagiert nicht'], ['frstall', 'Freundschaft stockt'], ['lucky', 'Glücksfreunde'], ['nocountry', 'Land fehlt'], ['vivmismatch', 'Muster passt nicht zum Land'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <select id="ff">${[['', 'Alle'], ['due', 'Prüfung fällig'], ['inactive', 'Inaktiv?'], ['quiet', 'Ruhig + inaktiv?'], ['remove', 'Eher entfernen (Vorschlag)'], ['ignores', 'Spielt, interagiert nicht'], ['frstall', 'Freundschaft stockt'], ['lucky', 'Glücksfreunde'], ['irl', 'Reallife-Freunde'], ['nocountry', 'Land fehlt'], ['vivmismatch', 'Muster passt nicht zum Land'], ...FL.map((l, i) => ['L' + i, l])].map(([v, l]) => `<option value="${v}" ${FF.flt === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Nächste Prüfung zuerst'], ['stale', 'Am längsten ohne Änderung'], ['origin', 'Herkunft'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
-    ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map(f => friendCard(f, A.get(f.id))).join('')}</div>
+    ${fl === 'remove' ? `<p class="note">Vorschlag, sortiert nach Punkten (ab ${REMOVE_MIN}). Punkte gibt es für fehlende Aktivität und niedriges Freundeslevel, Abzüge für hohes Level, Glücksfreund und seltene Vivillon-Muster. Nicht bewertet: Reallife-Freunde (${cnt(f => f.irl)}) und Freunde, die seit über ${REMOVE_FRESH} Tagen nicht geprüft wurden (${cnt(f => !f.irl && (!f.lastCheck || daysBetween(f.lastCheck, today()) > REMOVE_FRESH))}).</p>` : ''}
+    ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map(f => friendCard(f, A.get(f.id), fl === 'remove' ? rsOf(f) : null)).join('')}</div>
       ${list.length > FF.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="moreF">Weitere ${Math.min(60, list.length - FF.lim)} anzeigen (${list.length - FF.lim} übrig)</button> <button class="b" id="allF">Alle anzeigen</button></div>` : ''}`
       : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Freunde eingetragen – trag welche ein oder übernimm sie unter „Daten“.'}</div>`}`;
   addF.onclick = () => editFriend();
@@ -936,7 +968,7 @@ function renderFriends(){
     if (a === 'check') return checkFriend(f);
   });
 }
-function friendCard(f, ac){
+function friendCard(f, ac, rs){
   ac = ac || activity(f);
   const pr = friendProgress(f), t = today(), lvl = f.level || 0;
   const hearts = '♥'.repeat(lvl) + '♡'.repeat(MAXLVL - lvl);
@@ -946,7 +978,7 @@ function friendCard(f, ac){
   const trainer = [f.trainerLvl ? `Lv ${f.trainerLvl}` : '', f.xp != null ? `EP ${xpFmt(f.xp)}` : ''].filter(Boolean).join(' · ');
   const short = d => d ? new Date(d + 'T12:00').toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: '2-digit' }) : '–';
   return `<div class="card fr">
-    <div class="row"><h3 class="sp">${esc(f.name)} ${f.lucky ? '<span class="bd lu">Glücksfreund</span>' : ''}</h3><button class="b s" data-act="edit" data-id="${f.id}" title="Bearbeiten">✎</button></div>
+    <div class="row"><h3 class="sp">${esc(f.name)} ${f.lucky ? '<span class="bd lu">Glücksfreund</span>' : ''}${f.irl ? ' <span class="bd" title="Wird nie zum Entfernen vorgeschlagen">👥 Reallife</span>' : ''}</h3><button class="b s" data-act="edit" data-id="${f.id}" title="Bearbeiten">✎</button></div>
     <div class="muted" style="font-size:13px">${[esc(originTxt(f) || 'Herkunft unbekannt'), trainer, f.code ? esc(f.code) : ''].filter(Boolean).join(' · ')}</div>
     <div class="row" style="margin-top:8px"><span class="hearts" style="color:#e2557a">${hearts}</span><b class="sp">${FL[lvl]}</b></div>
     <div class="prog"><i style="width:${pr.pct}%"></i></div>
@@ -956,6 +988,7 @@ function friendCard(f, ac){
     </div>
     ${ac.detail ? `<div class="note" style="margin-top:4px">${ac.detail}</div>` : ''}
     <div class="note" style="margin-top:4px">Geprüft ${short(f.lastCheck)}${ac.checkAge != null ? ` (vor ${ac.checkAge} T)` : ''}${ac.nextCheck ? ` · nächste Prüfung ${short(ac.nextCheck)}` : ''} · EP geändert ${short(f.xpChanged)} · Freundschaft geändert ${short(f.friendChanged)}</div>
+    ${rs && rs.score != null ? `<div class="note" style="margin-top:6px;padding:6px 8px;border-radius:8px;background:var(--line)"><b>${rs.score} Punkte</b> · ${rs.why.map(esc).join(' · ')}</div>` : ''}
     ${f.viv && VIVMAP[f.viv] ? `<div class="note" style="margin-top:4px">Vivillon: ${vivDot(f.viv)}${esc(VIVMAP[f.viv][1])}${vivMismatch(f) ? ` <span class="st lo" title="Laut Tabelle gibt es dieses Muster in ${esc(countryName(f.country))} nicht">passt nicht zum Land</span>` : ''}</div>` : ''}
     <div class="row" style="margin-top:10px">
       <button class="b s ${ac.due ? 'p' : ''}" data-act="check" data-id="${f.id}">Prüfen</button>
@@ -981,6 +1014,7 @@ function editFriend(f){
       <label>Freundeslevel<select name="level">${FL.map((l, i) => `<option value="${i}" ${(f.level || 0) === i ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <label>Resttage/-punkte laut Spiel<input name="left" type="number" min="0" max="90" value="${f.left ?? (pr.left ?? '')}"></label>
       <label class="chk"><input type="checkbox" name="lucky" ${f.lucky ? 'checked' : ''}> Glücksfreund</label>
+      <label class="chk" title="Wird nie zum Entfernen vorgeschlagen"><input type="checkbox" name="irl" ${f.irl ? 'checked' : ''}> 👥 Reallife-Freund</label>
     </div>
     <p class="note">Hier korrigierst du nur Level und Resttage (Stand: heute). Zum Abgleichen mit dem Spiel nimm „Prüfen“ – nur dort werden die Änderungsdaten fortgeschrieben.</p>
     <label class="fl">Notizen<textarea name="notes">${esc(f.notes)}</textarea></label>
@@ -993,7 +1027,7 @@ function editFriend(f){
       if (go !== undefined && !changed) return navOpen('friends', go);
       if (act === 'del'){ if (confirm(`${f.name} löschen?`)){ S.friends = S.friends.filter(x => x.id !== f.id); save(); render(); } return; }
       const lvl = +fd.get('level'), left = num(fd.get('left'));
-      Object.assign(f, { name: fd.get('name').trim(), code: fd.get('code').trim(), country: parseOrigin(fd.get('country')).country, region: fd.get('region').trim(), viv: fd.get('viv'), since: fd.get('since'), lucky: !!fd.get('lucky'), notes: fd.get('notes') });
+      Object.assign(f, { name: fd.get('name').trim(), code: fd.get('code').trim(), country: parseOrigin(fd.get('country')).country, region: fd.get('region').trim(), viv: fd.get('viv'), irl: !!fd.get('irl'), since: fd.get('since'), lucky: !!fd.get('lucky'), notes: fd.get('notes') });
       if (lvl !== (f.level || 0) || left !== (f.left ?? null)){
         f.level = lvl; f.left = left ?? spanOf(lvl); f.leftDate = today();
       }
