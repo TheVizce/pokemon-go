@@ -992,12 +992,15 @@ function renderFriends(){
       <select id="fs">${[['level', 'Freundeslevel'], ['next', 'Nächstes Level bald'], ['check', 'Nächste Prüfung zuerst'], ['stale', 'Am längsten ohne Änderung'], ['origin', 'Herkunft'], ['name', 'Name']].map(([v, l]) => `<option value="${v}" ${FF.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
     </div>
     ${fl === 'gifts' ? (() => { const n = giftsToday(), lim = giftLimit(), w = S.friends.filter(f => f.giftWaiting).length; return `<div class="card" style="margin-bottom:10px"><div class="row"><b class="sp">🎁 Heute geöffnet: ${n} / ${lim}${n >= lim ? ' – Limit erreicht' : ` · noch ${lim - n}`}</b><label class="note" style="display:flex;gap:6px;align-items:center">Limit pro Tag <input type="number" id="giftLim" min="1" max="100" value="${lim}" style="width:64px"></label></div>
-      <p class="note" style="margin:6px 0 0">${w} Geschenk${w === 1 ? '' : 'e'} vorgemerkt. Öffne von oben nach unten: zuerst Freunde, bei denen die Freundschaft steigt und von denen du am längsten nichts geöffnet hast. Neue Geschenke vormerken: <button class="b s" id="capOpen">📋 Geschenke erfassen</button></p></div>`; })() : ''}
+      <p class="note" style="margin:6px 0 0">${w} Geschenk${w === 1 ? '' : 'e'} vorgemerkt. Öffne von oben nach unten: zuerst Freunde, bei denen die Freundschaft steigt und von denen du am längsten nichts geöffnet hast. Neue Geschenke vormerken: <button class="b s" id="capOpen">📋 Geschenke erfassen</button></p>
+      ${w ? `<div class="row" style="margin-top:8px"><button class="b s p" id="giftStr">🔍 Suchstring fürs Spiel kopieren</button><span class="note">die nächsten ${Math.min(w, Math.max(0, lim - n)) || w} in dieser Reihenfolge</span></div><div id="giftStrOut"></div>` : ''}</div>`; })() : ''}
     ${fl === 'remove' ? `<p class="note">Vorschlag, sortiert nach Punkten (ab ${REMOVE_MIN}). Punkte gibt es für fehlende Aktivität und niedriges Freundeslevel, Abzüge für hohes Level, Glücksfreund und seltene Vivillon-Muster. Nicht bewertet: Reallife-Freunde (${cnt(f => f.irl)}) und Freunde, die seit über ${REMOVE_FRESH} Tagen nicht geprüft wurden (${cnt(f => !f.irl && (!f.lastCheck || daysBetween(f.lastCheck, today()) > REMOVE_FRESH))}).</p>` : ''}
     ${list.length ? `<div class="note" style="margin-bottom:8px">${list.length} Treffer</div><div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(290px,1fr))">${list.slice(0, FF.lim).map((f, i) => friendCard(f, A.get(f.id), fl === 'remove' ? rsOf(f) : null, fl === 'gifts' ? { rank: i + 1, ...gsOf(f) } : null)).join('')}</div>
       ${list.length > FF.lim ? `<div style="text-align:center;margin:16px"><button class="b" id="moreF">Weitere ${Math.min(60, list.length - FF.lim)} anzeigen (${list.length - FF.lim} übrig)</button> <button class="b" id="allF">Alle anzeigen</button></div>` : ''}`
       : `<div class="empty">${all.length ? 'Nichts gefunden.' : 'Noch keine Freunde eingetragen – trag welche ein oder übernimm sie unter „Daten“.'}</div>`}`;
   addF.onclick = () => editFriend();
+  const gsb = document.getElementById('giftStr');
+  if (gsb) gsb.onclick = () => giftSearchString(list.filter(f => f.giftWaiting));
   const co = document.getElementById('capOpen'); if (co) co.onclick = () => { FF.capture = true; CAPTURE_NEW = new Set(); renderFriends(); window.scrollTo(0, 0); };
   const gl = document.getElementById('giftLim'); if (gl) gl.onchange = () => { const v = Math.max(1, Math.min(100, Math.round(+gl.value) || 20)); try{ localStorage.setItem(GIFT_LIMIT_KEY, String(v)); }catch(e){} renderFriends(); };
   const mf = document.getElementById('moreF'); if (mf) mf.onclick = () => { FF.lim += 60; renderFriends(); };
@@ -1079,6 +1082,20 @@ function renderGiftCapture(){
   bar.style.top = hh + 'px';
   main.querySelectorAll('.capjump a').forEach(a => a.onclick = e => { e.preventDefault(); const t = document.getElementById(a.getAttribute('href').slice(1)); if (t) window.scrollTo(0, t.getBoundingClientRect().top + window.scrollY - hh - bar.offsetHeight); });
   document.getElementById('capDone').onclick = () => { FF.capture = false; FF.flt = 'gifts'; const n = CAPTURE_NEW.size; CAPTURE_NEW = new Set(); renderFriends(); window.scrollTo(0, 0); if (n) toast(`🎁 ${n} neue Geschenk${n === 1 ? '' : 'e'} vorgemerkt`); };
+}
+// Suchstring für die Freundesliste im Spiel: Namen mit Komma (= oder). Die Spielsuche vergleicht den Anfang von Name/Spitzname,
+// daher Warnung, wenn ein Name der Anfang eines anderen Freundesnamens ist.
+function giftSearchString(ordered){
+  const left = Math.max(0, giftLimit() - giftsToday()), pick = ordered.slice(0, left || ordered.length);
+  const str = pick.map(f => f.name.trim()).join(',');
+  const clash = pick.flatMap(f => S.friends.filter(x => x.id !== f.id && x.name.toLowerCase().startsWith(f.name.trim().toLowerCase())).map(x => `${f.name} → auch ${x.name}`));
+  const out = document.getElementById('giftStrOut');
+  out.innerHTML = `<textarea readonly rows="3" style="width:100%;margin-top:8px;font:13px ui-monospace,monospace">${esc(str)}</textarea>
+    <p class="note" style="margin:4px 0 0">${pick.length} Namen${left ? '' : ' (Tageslimit schon erreicht – alle vorgemerkten)'}. Im Spiel: Freundesliste → Suche → einfügen. Die Reihenfolge dort ist die des Spiels, nicht diese.${clash.length ? `<br>⚠️ Findet zusätzlich ähnliche Namen: ${clash.map(esc).join(' · ')}` : ''}</p>`;
+  const ta = out.querySelector('textarea');
+  const done = ok => toast(ok ? `🔍 Suchstring mit ${pick.length} Namen kopiert` : 'Kopieren nicht möglich – Text unten markieren und kopieren');
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(str).then(() => done(true), () => { ta.select(); done(false); });
+  else { ta.select(); try{ done(document.execCommand('copy')); }catch(e){ done(false); } }
 }
 // Kurze Rückmeldung unten mit optionalem „Rückgängig“
 let TOAST_T = 0;
